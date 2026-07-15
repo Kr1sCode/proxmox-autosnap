@@ -37,50 +37,82 @@ have_whiptail=0
 if [ "${AUTOSNAP_NONINTERACTIVE:-0}" != 1 ] && command -v whiptail >/dev/null 2>&1; then
   have_whiptail=1
 fi
-
-ask() {  # ask VAR "Prompt" "default"
-  local __var="$1" __prompt="$2" __def="${3:-}" __val=""
-  if [ "$have_whiptail" = 1 ]; then
-    __val=$(whiptail --title "proxmox-autosnap" --inputbox "$__prompt" 10 64 "$__def" 3>&1 1>&2 2>&3) \
-      || die "anulowano"
-  else
-    read -rp "$__prompt [$__def]: " __val
-  fi
-  printf -v "$__var" '%s' "${__val:-$__def}"
-}
+WT=(whiptail --backtitle "proxmox-autosnap" --title "proxmox-autosnap")
+wt_input()  { "${WT[@]}" --inputbox    "$1" 9  68 "$2" 3>&1 1>&2 2>&3; }
+wt_pass()   { "${WT[@]}" --passwordbox  "$1" 9  68 ""  3>&1 1>&2 2>&3; }
 
 # ---------- defaults ----------
 NEXTID=$(pvesh get /cluster/nextid 2>/dev/null || echo 200)
 DEF_CTID="$NEXTID"; DEF_HOST="autosnap"; DEF_DISK="3"; DEF_CORES="1"; DEF_RAM="512"
-DEF_BRIDGE="vmbr0"; DEF_NET="dhcp"
 
-# storage that supports containers (rootdir)
+# detect bridges + container-capable storages
+mapfile -t BRIDGES < <(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | sort)
+[ "${#BRIDGES[@]}" -gt 0 ] || BRIDGES=(vmbr0)
+DEF_BRIDGE="vmbr0"; printf '%s\n' "${BRIDGES[@]}" | grep -qx vmbr0 || DEF_BRIDGE="${BRIDGES[0]}"
 mapfile -t STORES < <(pvesm status -content rootdir 2>/dev/null | awk 'NR>1{print $1}')
 DEF_STORE="${STORES[0]:-local-lvm}"
 
-MODE="Default"
+# ---------- base values (env overridable, also prefill the wizard) ----------
+CTTYPE="${AUTOSNAP_UNPRIVILEGED:-1}"           # 1=unprivileged 0=privileged
+PASSWORD="${AUTOSNAP_PASSWORD:-}"
+CTID="${AUTOSNAP_CTID:-$DEF_CTID}";      HOSTNAME="${AUTOSNAP_HOSTNAME:-$DEF_HOST}"
+DISK="${AUTOSNAP_DISK:-$DEF_DISK}";      CORES="${AUTOSNAP_CORES:-$DEF_CORES}"
+RAM="${AUTOSNAP_RAM:-$DEF_RAM}";         STORE="${AUTOSNAP_STORE:-$DEF_STORE}"
+BRIDGE="${AUTOSNAP_BRIDGE:-$DEF_BRIDGE}"; DNS="${AUTOSNAP_NS:-}"; NESTING="${AUTOSNAP_NESTING:-1}"
+# IPv4: parse AUTOSNAP_NET ("dhcp" | "CIDR,gw=GW")
+IP4MODE="dhcp"; IP4=""; GW=""
+if [ -n "${AUTOSNAP_NET:-}" ] && [ "${AUTOSNAP_NET}" != "dhcp" ]; then
+  IP4MODE="static"; IP4="${AUTOSNAP_NET%%,*}"; GW="$(sed -n 's/.*gw=\([^,]*\).*/\1/p' <<<"$AUTOSNAP_NET")"
+fi
+
+# ---------- wizard ----------
 if [ "$have_whiptail" = 1 ]; then
-  MODE=$(whiptail --title "proxmox-autosnap" --menu "Tryb instalacji" 12 60 2 \
-    "Default"  "Automatyczne ustawienia (zalecane)" \
-    "Advanced" "Ręcznie: CTID, sieć, storage, zasoby" 3>&1 1>&2 2>&3) || die "anulowano"
+  MODE=$("${WT[@]}" --menu "Tryb instalacji" 12 68 2 \
+    "1" "Default  — automatyczne ustawienia (DHCP, vmbr0)" \
+    "2" "Advanced — CT ID, hostname, sieć, DNS, zasoby" 3>&1 1>&2 2>&3) || die "anulowano"
+  if [ "$MODE" = "2" ]; then
+    CTTYPE=$("${WT[@]}" --radiolist "Typ kontenera" 11 68 2 \
+      "1" "Unprivileged (zalecane)" ON  "0" "Privileged" OFF 3>&1 1>&2 2>&3) || die "anulowano"
+    PASSWORD=$(wt_pass "Hasło root (puste = wygeneruj losowe)") || die "anulowano"
+    CTID=$(wt_input "Container ID" "$DEF_CTID") || die "anulowano"
+    HOSTNAME=$(wt_input "Hostname" "$DEF_HOST") || die "anulowano"
+    DISK=$(wt_input "Dysk (GB)" "$DEF_DISK") || die "anulowano"
+    CORES=$(wt_input "Rdzenie CPU" "$DEF_CORES") || die "anulowano"
+    RAM=$(wt_input "RAM (MiB)" "$DEF_RAM") || die "anulowano"
+    smenu=(); for s in "${STORES[@]}"; do smenu+=("$s" ""); done
+    [ "${#smenu[@]}" -gt 0 ] && STORE=$("${WT[@]}" --menu "Storage (rootfs)" 14 68 6 "${smenu[@]}" 3>&1 1>&2 2>&3)
+    bmenu=(); for b in "${BRIDGES[@]}"; do bmenu+=("$b" ""); done
+    BRIDGE=$("${WT[@]}" --menu "Network bridge" 14 68 6 "${bmenu[@]}" 3>&1 1>&2 2>&3) || die "anulowano"
+    IP4MODE=$("${WT[@]}" --menu "Konfiguracja IPv4" 11 68 2 \
+      "dhcp" "Automatycznie (DHCP)" "static" "Statyczny adres" 3>&1 1>&2 2>&3) || die "anulowano"
+    if [ "$IP4MODE" = "static" ]; then
+      IP4=$(wt_input "Adres IPv4 w formacie CIDR (np. 192.168.1.50/24)" "$IP4") || die "anulowano"
+      GW=$(wt_input "Brama (gateway), np. 192.168.1.1" "$GW") || die "anulowano"
+    fi
+    DNS=$(wt_input "Serwer DNS (puste = dziedzicz z hosta)" "$DNS") || die "anulowano"
+    if "${WT[@]}" --yesno "Włączyć nesting? (wymagane przez systemd w kontenerze)" 8 68; then
+      NESTING=1
+    else
+      NESTING=0
+    fi
+    "${WT[@]}" --yesno "Podsumowanie:
+
+  CT ID:     $CTID   ($([ "$CTTYPE" = 1 ] && echo unprivileged || echo privileged))
+  Hostname:  $HOSTNAME
+  Zasoby:    ${CORES} vCPU · ${RAM} MiB · ${DISK} GB · $STORE
+  Sieć:      $BRIDGE · $([ "$IP4MODE" = static ] && echo "$IP4 gw=$GW" || echo DHCP)
+  DNS:       ${DNS:-<host>}
+
+Utworzyć kontener?" 16 68 || die "anulowano przez użytkownika"
+  fi
 fi
 
-# env overrides (also used as prefilled defaults in Advanced prompts)
-CTID="${AUTOSNAP_CTID:-$DEF_CTID}";     HOSTNAME="${AUTOSNAP_HOSTNAME:-$DEF_HOST}"
-DISK="${AUTOSNAP_DISK:-$DEF_DISK}";     CORES="${AUTOSNAP_CORES:-$DEF_CORES}"
-RAM="${AUTOSNAP_RAM:-$DEF_RAM}";        STORE="${AUTOSNAP_STORE:-$DEF_STORE}"
-BRIDGE="${AUTOSNAP_BRIDGE:-$DEF_BRIDGE}"; NETCFG="${AUTOSNAP_NET:-$DEF_NET}"
-
-if [ "$MODE" = "Advanced" ]; then
-  ask CTID     "CTID kontenera"                  "$DEF_CTID"
-  ask HOSTNAME "Hostname"                         "$DEF_HOST"
-  ask CORES    "Rdzenie CPU"                      "$DEF_CORES"
-  ask RAM      "RAM (MB)"                          "$DEF_RAM"
-  ask DISK     "Dysk (GB)"                         "$DEF_DISK"
-  ask STORE    "Storage (rootdir): ${STORES[*]:-local-lvm}" "$DEF_STORE"
-  ask BRIDGE   "Bridge sieciowy"                  "$DEF_BRIDGE"
-  ask NETCFG   "IP: 'dhcp' lub CIDR np. 10.0.0.50/24,gw=10.0.0.1" "$DEF_NET"
+# ---------- validate ----------
+[[ "$CTID" =~ ^[0-9]+$ ]] || die "CTID musi być liczbą: $CTID"
+if pct status "$CTID" >/dev/null 2>&1 || qm status "$CTID" >/dev/null 2>&1; then
+  die "ID $CTID jest już zajęte"
 fi
+[ "$IP4MODE" = "static" ] && { [ -n "$IP4" ] || die "statyczny IPv4 wybrany, ale adres pusty"; }
 
 # ---------- template ----------
 info "Sprawdzam szablon Debian 13…"
@@ -94,11 +126,14 @@ fi
 msg "Szablon: $TMPL"
 
 # ---------- network arg ----------
-if [ "$NETCFG" = "dhcp" ]; then
-  NET="name=eth0,bridge=${BRIDGE},ip=dhcp"
+if [ "$IP4MODE" = "static" ]; then
+  NET="name=eth0,bridge=${BRIDGE},ip=${IP4}"
+  [ -n "$GW" ] && NET="${NET},gw=${GW}"
 else
-  NET="name=eth0,bridge=${BRIDGE},ip=${NETCFG}"
+  NET="name=eth0,bridge=${BRIDGE},ip=dhcp"
 fi
+NS_ARG=(); [ -n "$DNS" ] && NS_ARG=(--nameserver "$DNS")
+[ -n "$PASSWORD" ] || PASSWORD="$(openssl rand -base64 12 2>/dev/null || head -c 12 /dev/urandom | base64)"
 
 # ---------- create ----------
 info "Tworzę LXC ${CTID} (${HOSTNAME})…"
@@ -106,9 +141,10 @@ pct create "$CTID" "$TMPL" \
   --hostname "$HOSTNAME" \
   --cores "$CORES" --memory "$RAM" --swap "$RAM" \
   --rootfs "${STORE}:${DISK}" \
-  --net0 "$NET" \
-  --features nesting=1 \
-  --ostype debian --unprivileged 1 --onboot 1 \
+  --net0 "$NET" "${NS_ARG[@]}" \
+  --features "nesting=${NESTING}" \
+  --password "$PASSWORD" \
+  --ostype debian --unprivileged "$CTTYPE" --onboot 1 \
   --description "proxmox-autosnap — scheduled snapshots + retention" >/dev/null
 msg "Kontener utworzony"
 pct start "$CTID" >/dev/null
@@ -124,17 +160,29 @@ msg "Kontener IP: ${CT_IP}"
 PVE_HOST=$(ip -4 -o addr show "$BRIDGE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
 [ -n "${PVE_HOST:-}" ] || PVE_HOST=$(hostname -I | awk '{print $1}')
 
-# ---------- API token + role on host ----------
-info "Provisioning roli/tokenu API na hoście…"
+# ---------- API token + role on host (fully automatic) ----------
+# Auto-detects the API endpoint (host IP on the container's bridge, port 8006)
+# and auto-provisions a scoped token. The token can read every guest and its
+# snapshots (VM.Audit) and create/delete them (VM.Snapshot) — nothing else.
+info "Auto-provisioning roli/tokenu API na hoście (endpoint: ${PVE_HOST}:8006)…"
 pveum role add AutoSnap --privs "VM.Snapshot VM.Audit" 2>/dev/null || \
   pveum role modify AutoSnap --privs "VM.Snapshot VM.Audit" 2>/dev/null || true
 pveum user add autosnap@pve --comment "proxmox-autosnap" 2>/dev/null || true
 pveum acl modify /vms --users autosnap@pve --roles AutoSnap 2>/dev/null || true
+if pveum user token list autosnap@pve --output-format json 2>/dev/null | grep -q '"manager"'; then
+  warn "Token autosnap@pve!manager już istniał — rotuję na nowy"
+fi
 pveum user token remove autosnap@pve manager 2>/dev/null || true
 TOKVAL=$(pveum user token add autosnap@pve manager --privsep 0 --output-format json | \
   python3 -c "import sys,json;print(json.load(sys.stdin)['value'])")
 [ -n "$TOKVAL" ] || die "nie udało się utworzyć tokenu"
-msg "Token API: autosnap@pve!manager"
+# auto-verify the token actually works against the API
+if curl -fsSk -H "Authorization: PVEAPIToken=autosnap@pve!manager=${TOKVAL}" \
+     "https://${PVE_HOST}:8006/api2/json/version" >/dev/null 2>&1; then
+  msg "Token API zweryfikowany (autosnap@pve!manager)"
+else
+  warn "Token utworzony, ale nie zweryfikowałem połączenia z ${PVE_HOST}:8006 — sprawdź sieć kontenera"
+fi
 
 # ---------- install app inside container ----------
 info "Instaluję aplikację w kontenerze…"
@@ -178,7 +226,8 @@ echo
 echo -e "${GN}${BD} ✔ Gotowe!${NC}"
 echo -e "   Panel:    ${BD}http://${CT_IP}/${NC}"
 echo -e "   Login:    Twoje poświadczenia Proxmoksa (domyślnie ${BD}root@pam${NC})"
-echo -e "   Kontener: CT ${BD}${CTID}${NC} (${HOSTNAME})"
+echo -e "   Kontener: CT ${BD}${CTID}${NC} (${HOSTNAME}) · IP ${BD}${CT_IP}${NC}"
+echo -e "   Root CT:  hasło ${BD}${PASSWORD}${NC}  (dostęp też przez: pct enter ${CTID})"
 echo
 echo -e "   ${YW}HTTPS:${NC} wystaw przez reverse proxy (np. Nginx Proxy Manager) → http://${CT_IP}:80"
 echo -e "   ${YW}Uwaga:${NC} panel wpuszcza tylko allowlistę (domyślnie root@pam). Nie wystawiaj"
