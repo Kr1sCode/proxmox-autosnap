@@ -71,13 +71,61 @@ def _record_fail(ip):
 
 @app.before_request
 def _guard():
-    if request.path == "/login" or request.path.startswith("/api/login"):
+    p = request.path
+    configured = core.is_configured()
+    # first-run setup (open until configured, since login needs a host to validate against)
+    if p == "/setup" or p.startswith("/api/setup"):
+        if configured and p == "/setup":
+            return redirect("/")
+        return None
+    if not configured:
+        if p.startswith("/api/"):
+            return jsonify({"error": "setup required"}), 503
+        return redirect("/setup")
+    # normal auth
+    if p == "/login" or p.startswith("/api/login"):
         return None
     if session.get("user"):
         return None
-    if request.path.startswith("/api/"):
+    if p.startswith("/api/"):
         return jsonify({"error": "unauthorized"}), 401
     return redirect("/login")
+
+
+@app.route("/setup")
+def setup_page():
+    return send_from_directory(STATIC_DIR, "setup.html")
+
+
+@app.route("/api/setup", methods=["GET", "POST"])
+def api_setup():
+    cfg = core.load_config()
+    if request.method == "GET":
+        host = cfg["settings"].get("pve_host", "")
+        return jsonify({
+            "configured": core.is_configured(),
+            "pve_host": "" if host == "CHANGE_ME" else host,
+            "pve_port": cfg["settings"].get("pve_port", 8006),
+        })
+    if core.is_configured():
+        return jsonify({"error": "already configured"}), 409
+    body = request.get_json(force=True) or {}
+    host = str(body.get("pve_host", "")).strip()
+    port = int(body.get("pve_port", 8006) or 8006)
+    token = str(body.get("token", "")).strip()
+    verify = bool(body.get("verify_tls", False))
+    if not host or not token:
+        return jsonify({"error": "host i token są wymagane"}), 400
+    if not core.check_token({"pve_host": host, "pve_port": port, "verify_tls": verify}, token):
+        return jsonify({"error": "token nie działa z tym hostem (sprawdź adres/uprawnienia)"}), 400
+    cfg["settings"]["pve_host"] = host
+    cfg["settings"]["pve_port"] = port
+    cfg["settings"]["verify_tls"] = verify
+    core.save_config(cfg)
+    with open(core.TOKEN_PATH, "w") as f:
+        f.write(token)
+    os.chmod(core.TOKEN_PATH, 0o600)
+    return jsonify({"ok": True})
 
 
 @app.route("/login")

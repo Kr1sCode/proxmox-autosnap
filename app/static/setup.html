@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autosnap · konfiguracja</title>
+<style>
+  :root{--bg:#f5f6f8;--panel:#fff;--line:#d9dce1;--txt:#2b3034;--dim:#7b838b;--accent:#2d7dd2;
+    --accent-bg:#eaf2fb;--green:#3ea150;--red:#cf3b45;--code:#0d131c}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 16px;
+    background:var(--bg);color:var(--txt);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+  .card{width:min(600px,96vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 1px 2px rgba(20,30,45,.06),0 10px 30px rgba(20,30,45,.1);overflow:hidden}
+  .head{padding:22px 26px 6px;text-align:center}
+  .logo{font-size:20px;font-weight:600}.logo .mk{color:var(--accent)}
+  .sub{color:var(--dim);font-size:12.5px;margin-top:4px}
+  .body{padding:20px 26px 26px;display:grid;gap:16px}
+  .step{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;font-weight:600}
+  details{border:1px solid var(--line);border-radius:9px;background:#fbfcfd}
+  summary{cursor:pointer;padding:11px 13px;font-weight:600;user-select:none}
+  .howto{padding:0 13px 13px;font-size:12.5px;color:var(--dim)}
+  pre{background:var(--code);color:#c9d6e5;border-radius:8px;padding:12px 13px;overflow:auto;font-size:12px;
+    line-height:1.6;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;margin:8px 0}
+  label{font-size:11.5px;color:var(--dim);font-weight:600;margin-bottom:5px;display:block}
+  input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:10px 11px;border-radius:8px;font:inherit}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+  .row{display:flex;gap:12px}.row .grow{flex:1}
+  .chk{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12.5px}
+  button{background:var(--accent);border:1px solid var(--accent);color:#fff;padding:11px;border-radius:8px;
+    font:inherit;font-weight:600;cursor:pointer;transition:.12s;width:100%}
+  button:hover{background:#2670bd}button:disabled{opacity:.6;cursor:not-allowed}
+  .msg{padding:9px 12px;border-radius:8px;font-size:12.5px;display:none}
+  .msg.err{display:block;background:#fbeef0;border:1px solid #e7c4c7;color:var(--red)}
+  .msg.ok{display:block;background:#eaf6ec;border:1px solid #cfe8d3;color:var(--green)}
+  code{background:#eef1f4;padding:1px 5px;border-radius:4px;font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="logo"><span class="mk">◆</span> autosnap</div>
+      <div class="sub">konfiguracja pierwszego uruchomienia</div>
+    </div>
+    <div class="body">
+      <div class="msg" id="msg"></div>
+
+      <div class="step">1 · Utwórz token API na hoście Proxmox</div>
+      <details>
+        <summary>Pokaż komendy (uruchom na hoście PVE jako root)</summary>
+        <div class="howto">
+          Nadaje tokenowi tylko prawa do migawek i odczytu maszyn — nic więcej.
+<pre>pveum role add AutoSnap --privs "VM.Snapshot VM.Audit"
+pveum user add autosnap@pve
+pveum acl modify /vms --users autosnap@pve --roles AutoSnap
+pveum user token add autosnap@pve manager --privsep 0</pre>
+          Ostatnia komenda wypisze <b>value</b> — wklej poniżej pełny token w formacie
+          <code>autosnap@pve!manager=&lt;value&gt;</code>.
+        </div>
+      </details>
+
+      <div class="step">2 · Połączenie</div>
+      <div class="row">
+        <div class="grow"><label>Host / IP Proxmoksa</label><input id="host" placeholder="np. 192.168.1.10"></div>
+        <div style="flex:0 0 96px"><label>Port</label><input id="port" value="8006"></div>
+      </div>
+      <div><label>Token API</label><input id="token" placeholder="autosnap@pve!manager=xxxxxxxx-xxxx-..."></div>
+      <label class="chk"><input type="checkbox" id="tls"> weryfikuj certyfikat TLS (dla self-signed zostaw wyłączone)</label>
+
+      <button id="btn" onclick="save()">Sprawdź i zapisz</button>
+    </div>
+  </div>
+<script>
+const $=id=>document.getElementById(id);
+async function init(){
+  try{const r=await fetch('/api/setup');const j=await r.json();
+    if(j.configured){location.href='/';return;}
+    if(j.pve_host)$('host').value=j.pve_host; if(j.pve_port)$('port').value=j.pve_port;
+  }catch(e){}
+}
+function show(cls,txt){const m=$('msg');m.className='msg '+cls;m.textContent=txt;}
+async function save(){
+  const btn=$('btn');btn.disabled=true;btn.textContent='Sprawdzam…';$('msg').className='msg';
+  try{
+    const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pve_host:$('host').value.trim(),pve_port:parseInt($('port').value||'8006'),
+        token:$('token').value.trim(),verify_tls:$('tls').checked})});
+    const j=await r.json();
+    if(r.ok){show('ok','Zapisano — przechodzę do panelu…');setTimeout(()=>location.href='/',700);return;}
+    show('err',j.error||('błąd '+r.status));
+  }catch(e){show('err','błąd połączenia');}
+  btn.disabled=false;btn.textContent='Sprawdź i zapisz';
+}
+init();
+</script>
+</body>
+</html>

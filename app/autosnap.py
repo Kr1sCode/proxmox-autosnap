@@ -164,6 +164,31 @@ class PVE:
         raise TimeoutError(f"task {upid} did not finish in {timeout}s")
 
 
+def check_token(settings, token):
+    """Return True if the given API token authenticates against the host."""
+    url = (f"https://{settings['pve_host']}:{settings['pve_port']}"
+           f"/api2/json/version")
+    try:
+        r = requests.get(url, headers={"Authorization": f"PVEAPIToken={token}"},
+                        verify=bool(settings.get("verify_tls", False)), timeout=10)
+    except requests.RequestException:
+        return False
+    return r.status_code == 200
+
+
+def is_configured():
+    """True once a PVE host and an API token have been set (first-run done)."""
+    cfg = load_config()
+    host = cfg["settings"].get("pve_host", "")
+    if not host or host == "CHANGE_ME":
+        return False
+    try:
+        with open(TOKEN_PATH) as f:
+            return bool(f.read().strip())
+    except OSError:
+        return False
+
+
 def verify_credentials(settings, username, password):
     """Validate a login against Proxmox itself via the ticket API.
 
