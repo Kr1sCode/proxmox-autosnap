@@ -58,7 +58,15 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Kr1sCode/proxmox-autosna
 
 Supported: `AUTOSNAP_CTID`, `AUTOSNAP_HOSTNAME`, `AUTOSNAP_CORES`, `AUTOSNAP_RAM`,
 `AUTOSNAP_DISK`, `AUTOSNAP_STORE`, `AUTOSNAP_BRIDGE`, `AUTOSNAP_NET` (`dhcp` or
-`CIDR,gw=…`).
+`CIDR,gw=…`), `AUTOSNAP_NS` (DNS), `AUTOSNAP_UNPRIVILEGED` (`1`/`0`),
+`AUTOSNAP_PASSWORD`, `AUTOSNAP_NESTING`.
+
+Otherwise the installer shows a **whiptail wizard** (in the style of the Proxmox
+community helper scripts) with a Default/Advanced choice: container type, root
+password, CT ID, hostname, CPU/RAM/disk, storage, bridge (auto‑detected),
+IPv4 DHCP/static + CIDR + gateway, DNS server, nesting — and a final summary to
+confirm before it creates anything. The API token + role are provisioned and
+verified automatically; the host needs no manual setup.
 
 > **HTTPS:** the app serves plain HTTP inside the container. Put it behind a
 > reverse proxy (e.g. Nginx Proxy Manager) for TLS + a domain.
