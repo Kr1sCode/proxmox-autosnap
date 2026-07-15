@@ -33,7 +33,10 @@ command -v pveversion >/dev/null 2>&1 || die "to nie wygląda na host Proxmox VE
 command -v pct >/dev/null 2>&1 || die "brak pct"
 info "Proxmox: $(pveversion | head -1)"
 
-have_whiptail=0; command -v whiptail >/dev/null 2>&1 && have_whiptail=1
+have_whiptail=0
+if [ "${AUTOSNAP_NONINTERACTIVE:-0}" != 1 ] && command -v whiptail >/dev/null 2>&1; then
+  have_whiptail=1
+fi
 
 ask() {  # ask VAR "Prompt" "default"
   local __var="$1" __prompt="$2" __def="${3:-}" __val=""
@@ -62,8 +65,11 @@ if [ "$have_whiptail" = 1 ]; then
     "Advanced" "Ręcznie: CTID, sieć, storage, zasoby" 3>&1 1>&2 2>&3) || die "anulowano"
 fi
 
-CTID="$DEF_CTID"; HOSTNAME="$DEF_HOST"; DISK="$DEF_DISK"; CORES="$DEF_CORES"; RAM="$DEF_RAM"
-BRIDGE="$DEF_BRIDGE"; NETCFG="$DEF_NET"; STORE="$DEF_STORE"
+# env overrides (also used as prefilled defaults in Advanced prompts)
+CTID="${AUTOSNAP_CTID:-$DEF_CTID}";     HOSTNAME="${AUTOSNAP_HOSTNAME:-$DEF_HOST}"
+DISK="${AUTOSNAP_DISK:-$DEF_DISK}";     CORES="${AUTOSNAP_CORES:-$DEF_CORES}"
+RAM="${AUTOSNAP_RAM:-$DEF_RAM}";        STORE="${AUTOSNAP_STORE:-$DEF_STORE}"
+BRIDGE="${AUTOSNAP_BRIDGE:-$DEF_BRIDGE}"; NETCFG="${AUTOSNAP_NET:-$DEF_NET}"
 
 if [ "$MODE" = "Advanced" ]; then
   ask CTID     "CTID kontenera"                  "$DEF_CTID"

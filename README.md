@@ -47,6 +47,19 @@ Then open `http://<container-ip>/` and log in with your Proxmox credentials
 (`root@pam` by default). That's it — every guest starts **disabled**; you opt in
 per guest from the UI.
 
+**Non-interactive / automation:** set `AUTOSNAP_NONINTERACTIVE=1` to skip the
+whiptail wizard and drive everything with env vars:
+
+```bash
+AUTOSNAP_NONINTERACTIVE=1 AUTOSNAP_CTID=250 AUTOSNAP_BRIDGE=vmbr1 \
+AUTOSNAP_NET=10.10.10.50/24,gw=10.10.10.1 AUTOSNAP_STORE=local-zfs \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Kr1sCode/proxmox-autosnap/main/install.sh)"
+```
+
+Supported: `AUTOSNAP_CTID`, `AUTOSNAP_HOSTNAME`, `AUTOSNAP_CORES`, `AUTOSNAP_RAM`,
+`AUTOSNAP_DISK`, `AUTOSNAP_STORE`, `AUTOSNAP_BRIDGE`, `AUTOSNAP_NET` (`dhcp` or
+`CIDR,gw=…`).
+
 > **HTTPS:** the app serves plain HTTP inside the container. Put it behind a
 > reverse proxy (e.g. Nginx Proxy Manager) for TLS + a domain.
 >
