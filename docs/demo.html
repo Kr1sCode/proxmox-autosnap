@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autosnap · Proxmox snapshot scheduler</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --head:#ffffff; --line:#d9dce1; --line2:#eceef1;
+    --txt:#2b3034; --dim:#7b838b; --accent:#2d7dd2; --accent-bg:#eaf2fb;
+    --green:#3ea150; --green-bg:#eaf6ec; --amber:#c9821a; --amber-bg:#fbf1e2;
+    --red:#cf3b45; --off:#b7bdc5; --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 18px rgba(20,30,45,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--txt);
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Liberation Sans",sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  /* header */
+  header{display:flex;align-items:center;gap:14px;padding:0 18px;height:52px;background:var(--head);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:600}
+  .brand .mk{color:var(--accent);font-size:18px}
+  .brand .sub{color:var(--dim);font-size:12px;font-weight:400}
+  .spacer{flex:1}
+  .master{display:flex;align-items:center;gap:9px;padding:5px 12px;border:1px solid var(--line);
+    border-radius:8px;background:var(--panel);font-size:12.5px}
+  .master b{font-weight:600}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);
+    border-radius:8px;background:var(--panel);font-size:12.5px;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--off);flex:none}
+  .dot.ok,.dot.run{background:var(--green)} .dot.bad{background:var(--red)} .dot.stop{background:var(--off)}
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+    color:var(--txt);padding:6px 12px;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px;
+    transition:.12s;white-space:nowrap}
+  .btn:hover{background:#f2f4f7;border-color:#c2c7cd}
+  .btn.sm{padding:4px 9px;font-size:12px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#2670bd}
+  .btn.ghost{background:transparent;border-color:transparent}
+  .btn.ghost:hover{background:#eef0f3}
+  .btn.danger{color:var(--red);border-color:#e7c4c7}
+  .btn.danger:hover{background:#fbeef0}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .icon{width:32px;height:32px;padding:0;justify-content:center;font-size:15px}
+  /* layout */
+  main{padding:18px;max-width:1440px;margin:0 auto}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .toolbar h1{font-size:16px;margin:0;font-weight:600}
+  .count{color:var(--dim);font-size:12.5px}
+  .filter{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;cursor:pointer;user-select:none}
+  /* table */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-weight:600;font-size:11.5px;color:var(--dim);padding:10px 14px;
+    background:#f3f4f6;border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th.c{text-align:center}
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  tbody td.c{text-align:center}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#f6f9fd}
+  .vmid{font-variant-numeric:tabular-nums;color:var(--dim);font-weight:600}
+  .gname{font-weight:600}
+  .badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--line)}
+  .badge.lxc{color:#2f6f9f;background:#eaf2fb;border-color:#cfe0f2}
+  .badge.qemu{color:#7a4fa0;background:#f3edfa;border-color:#e2d4f0}
+  .muted{color:var(--dim)}
+  .tnum{font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;padding:1px 8px;border-radius:11px;font-size:11.5px;border:1px solid var(--line);color:var(--dim)}
+  .tag.on{color:var(--green);background:var(--green-bg);border-color:#cfe8d3}
+  .tag.del{color:var(--amber);background:var(--amber-bg);border-color:#efdcc0}
+  .tag.dry{color:var(--accent);background:var(--accent-bg);border-color:#cfe0f2}
+  .rowact{display:flex;gap:6px;justify-content:flex-end}
+  /* switch */
+  .sw{position:relative;width:38px;height:21px;flex:none;display:inline-block}
+  .sw input{opacity:0;width:0;height:0;position:absolute}
+  .sw span{position:absolute;inset:0;background:var(--off);border-radius:21px;transition:.18s;cursor:pointer}
+  .sw span::before{content:"";position:absolute;width:15px;height:15px;left:3px;top:3px;background:#fff;
+    border-radius:50%;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .sw input:checked + span{background:var(--green)}
+  .sw input:checked + span::before{transform:translateX(17px)}
+  .sw.sm{width:32px;height:18px}.sw.sm span::before{width:13px;height:13px}
+  .sw.sm input:checked + span::before{transform:translateX(14px)}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(30,40,55,.42);display:none;align-items:flex-start;
+    justify-content:center;z-index:50;padding:56px 16px;overflow:auto}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(560px,96vw);
+    box-shadow:0 12px 40px rgba(20,30,45,.28);overflow:hidden}
+  .modal .mh{padding:16px 20px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600;
+    display:flex;align-items:center;gap:8px}
+  .modal .mh small{color:var(--dim);font-weight:400;font-size:12.5px}
+  .modal .mb{padding:18px 20px;display:grid;gap:15px}
+  .modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  .field{display:grid;gap:6px}
+  .field>label{font-size:12px;color:var(--dim);font-weight:600}
+  .field .hint{font-size:11.5px;color:var(--dim)}
+  input[type=text],input[type=number],input[type=time],select{background:var(--panel);
+    border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font:inherit;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+  .toggle-line{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:9px;background:#fafbfc}
+  .toggle-line .tt{flex:1}
+  .toggle-line .tt b{font-weight:600} .toggle-line .tt div{font-size:11.5px;color:var(--dim);margin-top:1px}
+  .indent{display:grid;gap:15px;padding:14px;border:1px dashed var(--line);border-radius:9px;background:#fbfcfd}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:var(--panel);padding:7px 16px;cursor:pointer;font:inherit;font-size:12.5px;color:var(--dim)}
+  .seg button.active{background:var(--accent);color:#fff}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .days{display:flex;gap:5px;flex-wrap:wrap}
+  .day{width:36px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--panel);
+    cursor:pointer;font:inherit;font-size:12px;color:var(--dim)}
+  .day.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .timelist{display:grid;gap:8px}
+  .timerow{display:flex;gap:8px;align-items:center}
+  .timerow input{width:120px}
+  /* log */
+  .logcard{margin-top:18px}
+  .logcard .lh{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
+    font-weight:600;font-size:12.5px}
+  pre#log{margin:0;padding:12px 14px;max-height:240px;overflow:auto;font-size:12px;line-height:1.6;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:#3a444d;white-space:pre-wrap}
+  /* toast */
+  #toast{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:70}
+  .toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    padding:10px 15px;border-radius:8px;box-shadow:var(--shadow);font-size:12.5px;min-width:220px;animation:sl .18s}
+  .toast.ok{border-left-color:var(--green)} .toast.err{border-left-color:var(--red)}
+  @keyframes sl{from{transform:translateX(16px);opacity:0}}
+</style>
+
+<script>
+(function(){
+  const now=Math.floor(Date.now()/1000);
+  const P={"Every 15 min":15,"Hourly":60,"Every 6 hours":360,"Every 12 hours":720,"Daily":1440,"Weekly":10080};
+  function g(vmid,name,type,en,o){o=o||{};
+    return {vmid:vmid,name:name,type:type,node:"pve-01",status:o.status||"running",
+      config:Object.assign({enabled:en,mode:"interval",interval_minutes:360,times:["03:00"],weekdays:[],
+        create:true,keep:8,prefix:"auto",dryrun:false},o.config||{}),
+      configured:en,managed:(o.managed!=null?o.managed:(en?4:0)),protected:(o.protected!=null?o.protected:1),
+      last_run:en?now-(o.lr||3600):null,last_created:null,last_deleted:0,last_error:o.err||null,
+      next_due:en?now+(o.nd||10800):null,now:now};
+  }
+  const G=[
+    g(100,"backup","lxc",false,{managed:0,protected:0}),
+    g(101,"storage","qemu",false,{managed:0,protected:0}),
+    g(102,"database","lxc",true,{config:{mode:"calendar",times:["03:00"],weekdays:[],keep:4},lr:5400,nd:39600,managed:4}),
+    g(103,"reverse-proxy","lxc",true,{lr:3600,nd:18000}),
+    g(104,"dns","lxc",true,{lr:3600,nd:18000}),
+    g(105,"autosnap","lxc",true,{lr:3300,nd:18000}),
+    g(106,"monitoring","lxc",true,{config:{mode:"calendar",times:["02:00","14:00"],weekdays:[]},lr:4200,nd:25200,managed:6}),
+    g(107,"logging","lxc",true,{lr:3600,nd:18000}),
+    g(109,"wifi-controller","lxc",true,{lr:3600,nd:18000}),
+    g(111,"metrics","lxc",true,{lr:3600,nd:18000}),
+    g(112,"vpn","lxc",true,{config:{keep:12},lr:3600,nd:18000,managed:9}),
+    g(114,"automation","lxc",true,{lr:3600,nd:18000}),
+    g(201,"dc-01","qemu",true,{lr:3600,nd:18000}),
+    g(202,"file-server","qemu",true,{lr:3600,nd:18000}),
+    g(301,"blog","lxc",true,{lr:1200,nd:18000}),
+    g(302,"shop","lxc",true,{config:{dryrun:true},lr:1200,nd:18000}),
+    g(303,"website","lxc",true,{config:{interval_minutes:15,keep:2},lr:300,nd:600,managed:2}),
+  ];
+  const LOG=[
+    "[2026-01-20 03:00:06] tick: due guests -> 301, 302, 303",
+    "[2026-01-20 03:00:06] creating snapshot auto_20260120_030006 on lxc/301 (blog)",
+    "[2026-01-20 03:00:09] created auto_20260120_030006",
+    "[2026-01-20 03:00:09] guest 301: 4 managed, protected=['manual-pre-upgrade']",
+    "[2026-01-20 03:00:09] within retention (keep=8), nothing to prune",
+    "[2026-01-20 03:00:09] creating snapshot auto_20260120_030009 on lxc/303 (website)",
+    "[2026-01-20 03:00:11] created auto_20260120_030011",
+    "[2026-01-20 03:00:11] guest 303: 3 managed, protected=none",
+    "[2026-01-20 03:00:11] deleting old snapshot auto_20260120_024511",
+    "[2026-01-20 03:00:12] deleted auto_20260120_024511",
+  ].join("\n");
+  const R={"/api/guests":G,"/api/presets":P,"/api/health":{ok:true,guests_visible:G.length},
+    "/api/settings":{paused:false,verify_tls:false,pve_host:"10.0.0.1",pve_port:8006,allowlist:["root@pam"],scheduler_minutes:5},
+    "/api/me":{user:"root@pam"},"/api/log":{log:LOG}};
+  window.fetch=function(u,o){var p=(""+u).split("?")[0];
+    var d=(p in R)?R[p]:{ok:true};
+    return Promise.resolve({ok:true,json:function(){return Promise.resolve(d);}});};
+})();
+</script>
+
+</head>
+<body>
+<header>
+  <div class="brand"><span class="mk">◆</span> autosnap <span class="sub">Proxmox snapshot scheduler</span></div>
+  <div class="spacer"></div>
+  <div class="master">
+    <span class="dot" id="pdot"></span><b>Harmonogram</b>
+    <label class="sw sm"><input type="checkbox" id="pauseSw" onchange="togglePause(this.checked)"><span></span></label>
+    <span id="pauseTxt" class="muted">—</span>
+  </div>
+  <div class="pill"><span id="hdot" class="dot"></span><span id="hstat">łączę…</span></div>
+  <span class="pill" id="userpill" style="display:none">👤 <span id="uname"></span></span>
+  <button class="btn icon ghost" title="Odśwież" onclick="load()">↻</button>
+  <button class="btn icon ghost" title="Ustawienia" onclick="openSettings()">⚙</button>
+  <button class="btn sm" onclick="logout()">Wyloguj</button>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h1>Guests</h1>
+    <span class="count" id="summary"></span>
+    <div class="spacer"></div>
+    <button class="btn sm" onclick="bulk('enable')">▶ Włącz wszystkie</button>
+    <button class="btn sm" onclick="bulk('disable')">⏸ Wyłącz wszystkie</button>
+    <label class="filter"><input type="checkbox" id="onlyOn"> tylko z harmonogramem</label>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>VMID</th><th>Nazwa</th><th>Typ</th><th class="c">Auto</th><th>Harmonogram</th>
+        <th class="c">Twórz</th><th class="c">Retencja</th><th class="c">Migawki</th>
+        <th>Ostatnio</th><th>Następnie</th><th></th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="11" class="muted" style="padding:22px">Ładowanie…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card logcard">
+    <div class="lh">Dziennik<div class="spacer"></div><button class="btn sm ghost" onclick="loadLog()">↻</button></div>
+    <pre id="log">—</pre>
+  </div>
+</main>
+
+<!-- edit guest -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="mh">Automatyczne migawki — <span id="mTitle"></span></div>
+    <div class="mb">
+      <div class="toggle-line">
+        <label class="sw"><input type="checkbox" id="fEnabled" onchange="syncModal()"><span></span></label>
+        <div class="tt"><b>Włącz harmonogram</b><div>Domyślnie wyłączone — nic się nie dzieje, dopóki nie włączysz.</div></div>
+      </div>
+      <div id="opts" class="indent">
+        <div class="field">
+          <label>Harmonogram</label>
+          <div class="seg" id="modeSeg">
+            <button type="button" data-mode="interval" onclick="setMode('interval')">Co jakiś czas</button>
+            <button type="button" data-mode="calendar" onclick="setMode('calendar')">O godzinie</button>
+          </div>
+        </div>
+
+        <div class="field" id="ivBox">
+          <label>Interwał</label>
+          <select id="fInterval"></select>
+          <div class="row" id="customWrap" style="display:none">
+            <input type="number" id="fCustom" min="1" style="width:120px"> <span class="hint">co ile minut</span>
+          </div>
+        </div>
+
+        <div id="calBox" style="display:none;display:grid;gap:14px">
+          <div class="field">
+            <label>Godziny</label>
+            <div class="timelist" id="timeList"></div>
+            <button type="button" class="btn sm" style="justify-self:start" onclick="addTime()">+ dodaj godzinę</button>
+          </div>
+          <div class="field">
+            <label>Dni tygodnia <span class="hint">(nic = codziennie)</span></label>
+            <div class="days" id="days"></div>
+          </div>
+        </div>
+
+        <div class="toggle-line">
+          <label class="sw"><input type="checkbox" id="fCreate"><span></span></label>
+          <div class="tt"><b>Twórz migawki automatycznie</b><div>Wg harmonogramu powstaje migawka <code>auto_…</code></div></div>
+        </div>
+        <div class="toggle-line">
+          <label class="sw"><input type="checkbox" id="fDelete" onchange="syncModal()"><span></span></label>
+          <div class="tt"><b>Kasuj stare automatycznie (retencja)</b><div>Usuwa najstarsze <code>auto_…</code>. Ręcznych nigdy nie tyka.</div></div>
+        </div>
+        <div class="field" id="keepWrap">
+          <label>Trzymaj najnowszych</label>
+          <div class="row"><input type="number" id="fKeep" min="1" style="width:100px"> <span class="hint">migawek</span></div>
+        </div>
+        <div class="toggle-line">
+          <label class="sw"><input type="checkbox" id="fDry"><span></span></label>
+          <div class="tt"><b>Tryb próbny (dry-run)</b><div>Loguje co <i>zrobiłby</i>, nic nie tworzy ani nie kasuje.</div></div>
+        </div>
+        <div class="field"><label>Prefiks nazw</label><input type="text" id="fPrefix" value="auto" style="max-width:180px"></div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn danger" id="mRemove" onclick="removeGuest()">Usuń config</button>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closeModal('overlay')">Anuluj</button>
+      <button class="btn primary" onclick="saveGuest()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- global settings -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <div class="mh">⚙ Ustawienia globalne</div>
+    <div class="mb">
+      <div class="toggle-line">
+        <label class="sw"><input type="checkbox" id="sPause"><span></span></label>
+        <div class="tt"><b>Pauza globalna</b><div>Wstrzymuje <u>cały</u> scheduler bez ruszania configów guestów.</div></div>
+      </div>
+      <div class="field">
+        <label>Dostęp do panelu (allowlista)</label>
+        <input type="text" id="sAllow" placeholder="root@pam, admin@pve">
+        <div class="hint">Kto może się logować. Login walidowany na żywo przez Proxmox.</div>
+      </div>
+      <div class="toggle-line">
+        <label class="sw"><input type="checkbox" id="sTls"><span></span></label>
+        <div class="tt"><b>Weryfikuj certyfikat TLS API</b><div>Włącz tylko jeśli host ma zaufany cert (domyślnie self-signed → off).</div></div>
+      </div>
+      <div class="field">
+        <label>Połączenie z Proxmoksem</label>
+        <div class="row muted"><span id="sHost">—</span> · scheduler co <span id="sTick">5</span> min</div>
+      </div>
+    </div>
+    <div class="mf"><div class="spacer"></div>
+      <button class="btn" onclick="closeModal('settingsOverlay')">Anuluj</button>
+      <button class="btn primary" onclick="saveSettings()">Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let GUESTS=[],PRESETS={},EDIT=null,STIMES=[],SDAYS=[],SMODE='interval';
+const DOW=['Pn','Wt','Śr','Cz','Pt','So','Nd'];
+const $=id=>document.getElementById(id);
+const fmt=t=>{if(!t)return '—';return new Date(t*1000).toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});};
+function toast(m,c=''){const t=document.createElement('div');t.className='toast '+c;t.textContent=m;$('toast').appendChild(t);setTimeout(()=>t.remove(),3500);}
+async function api(p,o){const r=await fetch(p,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
+
+async function load(){
+  try{
+    const [g,p,h,s]=await Promise.all([api('/api/guests'),api('/api/presets'),api('/api/health'),api('/api/settings')]);
+    GUESTS=g;PRESETS=p;render();
+    $('hdot').className='dot '+(h.ok?'ok':'bad');
+    $('hstat').textContent=h.ok?('API OK · '+h.guests_visible+' guests'):'API błąd';
+    applyPause(s.paused);
+  }catch(e){$('hdot').className='dot bad';$('hstat').textContent='błąd: '+e.message;}
+  loadLog();
+}
+async function loadLog(){try{const j=await api('/api/log');$('log').textContent=j.log||'—';const el=$('log');el.scrollTop=el.scrollHeight;}catch(e){}}
+function applyPause(p){$('pauseSw').checked=!p;$('pdot').className='dot '+(p?'stop':'ok');$('pauseTxt').textContent=p?'wstrzymany':'aktywny';}
+
+function schedLabel(c){
+  if(c.mode==='calendar'){
+    const t=(c.times||[]).join(', ');
+    const d=(c.weekdays&&c.weekdays.length)?c.weekdays.map(i=>DOW[i]).join(' '):'codziennie';
+    return `<span class="tnum">${t}</span> <span class="muted">· ${d}</span>`;
+  }
+  for(const[k,v]of Object.entries(PRESETS))if(v==c.interval_minutes)return k;
+  return 'co '+c.interval_minutes+' min';
+}
+function render(){
+  const onlyOn=$('onlyOn').checked;
+  const list=GUESTS.filter(g=>!onlyOn||g.config.enabled);
+  const on=GUESTS.filter(g=>g.config.enabled).length;
+  $('summary').textContent=`${GUESTS.length} guests · ${on} z harmonogramem`;
+  $('rows').innerHTML=list.map(g=>{
+    const c=g.config;
+    const sched=c.enabled?schedLabel(c):'<span class="muted">—</span>';
+    const create=c.enabled&&c.create?'<span class="tag on">tak</span>':'<span class="tag">nie</span>';
+    const ret=c.enabled&&c.keep>0?`<span class="tag del">keep ${c.keep}</span>`:'<span class="tag">off</span>';
+    const dry=c.dryrun?' <span class="tag dry">dry</span>':'';
+    const snaps=g.managed<0?'<span class="muted">?</span>':`<b>${g.managed}</b><span class="muted"> auto</span>${g.protected?` · ${g.protected} man`:''}`;
+    const err=g.last_error?` <span class="dot bad" title="${(g.last_error+'').replace(/"/g,'')}"></span>`:'';
+    return `<tr>
+      <td class="vmid">${g.vmid}</td>
+      <td><span class="gname">${g.name||''}</span> <span class="dot ${g.status==='running'?'run':'stop'}" title="${g.status}"></span></td>
+      <td><span class="badge ${g.type}">${g.type}</span></td>
+      <td class="c"><label class="sw sm"><input type="checkbox" ${c.enabled?'checked':''} onchange="quickToggle(${g.vmid},this.checked)"><span></span></label></td>
+      <td>${sched}${dry}</td>
+      <td class="c">${create}</td>
+      <td class="c">${ret}</td>
+      <td class="c">${snaps}</td>
+      <td class="tnum">${fmt(g.last_run)}${err}</td>
+      <td class="tnum muted">${c.enabled&&g.next_due?fmt(g.next_due):'—'}</td>
+      <td><div class="rowact">
+        <button class="btn sm" title="Migawka teraz" onclick="snapNow(${g.vmid})">📷</button>
+        <button class="btn sm" onclick="openModal(${g.vmid})">Edytuj</button>
+      </div></td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="11" class="muted" style="padding:22px">Brak</td></tr>';
+}
+
+async function quickToggle(vmid,on){
+  const g=GUESTS.find(x=>x.vmid==vmid);const c={...g.config,enabled:on};
+  try{await api('/api/guests/'+vmid,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});
+    toast(`${vmid}: harmonogram ${on?'włączony':'wyłączony'}`,'ok');load();}catch(e){toast('błąd: '+e.message,'err');load();}
+}
+async function bulk(action){
+  if(!confirm(action==='enable'?'Włączyć harmonogram dla wszystkich skonfigurowanych?':'Wyłączyć harmonogram dla wszystkich?'))return;
+  try{const j=await api('/api/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+    toast(`Zmieniono ${j.changed} guestów`,'ok');load();}catch(e){toast('błąd: '+e.message,'err');}
+}
+async function togglePause(swOn){ // switch on = harmonogram aktywny => paused=false
+  try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:!swOn})});
+    applyPause(!swOn);toast(swOn?'Harmonogram wznowiony':'Harmonogram wstrzymany (pauza globalna)','ok');}catch(e){toast('błąd: '+e.message,'err');load();}
+}
+
+/* ---- edit modal ---- */
+function setMode(m){SMODE=m;[...$('modeSeg').children].forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  $('ivBox').style.display=m==='interval'?'grid':'none';$('calBox').style.display=m==='calendar'?'grid':'none';}
+function renderDays(){$('days').innerHTML=DOW.map((d,i)=>`<button type="button" class="day ${SDAYS.includes(i)?'on':''}" onclick="toggleDay(${i})">${d}</button>`).join('');}
+function toggleDay(i){SDAYS=SDAYS.includes(i)?SDAYS.filter(x=>x!==i):[...SDAYS,i];renderDays();}
+function renderTimes(){$('timeList').innerHTML=STIMES.map((t,i)=>`<div class="timerow"><input type="time" value="${t}" onchange="STIMES[${i}]=this.value">
+  <button type="button" class="btn sm ghost" onclick="delTime(${i})" ${STIMES.length<2?'style="visibility:hidden"':''}>✕</button></div>`).join('');}
+function addTime(){STIMES.push('03:00');renderTimes();}
+function delTime(i){STIMES.splice(i,1);renderTimes();}
+
+function openModal(vmid){
+  const g=GUESTS.find(x=>x.vmid==vmid);EDIT=vmid;const c=g.config;
+  $('mTitle').innerHTML=`${g.type.toUpperCase()} ${vmid} <small>${g.name||''}</small>`;
+  const sel=$('fInterval');sel.innerHTML=Object.entries(PRESETS).map(([k,v])=>`<option value="${v}">${k}</option>`).join('')+'<option value="custom">Własny…</option>';
+  if(Object.values(PRESETS).includes(c.interval_minutes))sel.value=c.interval_minutes;else{sel.value='custom';$('fCustom').value=c.interval_minutes;}
+  sel.onchange=()=>{$('customWrap').style.display=sel.value==='custom'?'flex':'none';};sel.onchange();
+  STIMES=(c.times&&c.times.length?[...c.times]:['03:00']);SDAYS=[...(c.weekdays||[])];renderTimes();renderDays();
+  setMode(c.mode==='calendar'?'calendar':'interval');
+  $('fEnabled').checked=c.enabled;$('fCreate').checked=c.create;$('fDelete').checked=c.keep>0;
+  $('fKeep').value=c.keep>0?c.keep:8;$('fDry').checked=c.dryrun;$('fPrefix').value=c.prefix;
+  $('mRemove').style.display=g.configured?'':'none';
+  syncModal();$('overlay').classList.add('show');
+}
+function syncModal(){$('opts').style.display=$('fEnabled').checked?'grid':'none';$('keepWrap').style.display=$('fDelete').checked?'grid':'none';}
+function closeModal(id){$(id).classList.remove('show');}
+async function saveGuest(){
+  const body={enabled:$('fEnabled').checked,mode:SMODE,create:$('fCreate').checked,
+    keep:$('fDelete').checked?parseInt($('fKeep').value||'8'):0,dryrun:$('fDry').checked,prefix:$('fPrefix').value.trim(),
+    interval_minutes:$('fInterval').value==='custom'?parseInt($('fCustom').value||'60'):parseInt($('fInterval').value),
+    times:STIMES,weekdays:SDAYS};
+  try{await api('/api/guests/'+EDIT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('Zapisano '+EDIT,'ok');closeModal('overlay');load();}catch(e){toast('błąd: '+e.message,'err');}
+}
+async function removeGuest(){
+  if(!confirm('Usunąć konfigurację autosnap dla '+EDIT+'? (migawki zostają)'))return;
+  try{await api('/api/guests/'+EDIT,{method:'DELETE'});toast('Usunięto config '+EDIT,'ok');closeModal('overlay');load();}catch(e){toast('błąd: '+e.message,'err');}
+}
+async function snapNow(vmid){
+  if(!confirm('Zrobić migawkę teraz dla '+vmid+'?'))return;
+  toast('Tworzę migawkę '+vmid+'…');
+  try{const j=await api('/api/guests/'+vmid+'/snapshot',{method:'POST'});toast('Migawka '+(j.result.created||'')+' gotowa','ok');load();}catch(e){toast('błąd: '+e.message,'err');}
+}
+
+/* ---- settings ---- */
+async function openSettings(){
+  try{const s=await api('/api/settings');
+    $('sPause').checked=!!s.paused;$('sTls').checked=!!s.verify_tls;$('sAllow').value=(s.allowlist||[]).join(', ');
+    $('sHost').textContent=(s.pve_host||'')+':'+(s.pve_port||'');$('sTick').textContent=s.scheduler_minutes||5;
+    $('settingsOverlay').classList.add('show');}catch(e){toast('błąd: '+e.message,'err');}
+}
+async function saveSettings(){
+  const body={paused:$('sPause').checked,verify_tls:$('sTls').checked,
+    allowlist:$('sAllow').value.split(',').map(x=>x.trim()).filter(Boolean)};
+  try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('Zapisano ustawienia','ok');closeModal('settingsOverlay');load();}catch(e){toast('błąd: '+e.message,'err');}
+}
+
+async function logout(){try{await fetch('/api/logout',{method:'POST'});}catch(e){}location.href='/login';}
+async function whoami(){try{const j=await api('/api/me');if(j.user){$('uname').textContent=j.user;$('userpill').style.display='';}}catch(e){}}
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModal(o.id);}));
+$('onlyOn').addEventListener('change',render);
+whoami();load();setInterval(load,30000);
+</script>
+</body>
+</html>

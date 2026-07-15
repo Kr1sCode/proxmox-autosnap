@@ -1,0 +1,7 @@
+[Unit]
+Description=autosnap scheduler tick
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/autosnap
+ExecStart=/usr/bin/python3 /opt/autosnap/autosnap.py tick
