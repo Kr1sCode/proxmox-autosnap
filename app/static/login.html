@@ -31,6 +31,9 @@
   .err{background:var(--err-bg);border:1px solid var(--err-line);color:var(--red);padding:9px 12px;border-radius:8px;font-size:12px;display:none}
   .err.show{display:block}
   .hint{color:var(--dim);font-size:11.5px;text-align:center}
+  .linkbtn{background:none;border:none;color:var(--dim);font:inherit;font-size:11.5px;text-decoration:underline;cursor:pointer;padding:0}
+  .linkbtn:hover{color:var(--accent)}
+  #c{letter-spacing:3px;font-size:16px;text-align:center;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -42,20 +45,31 @@
     <div class="head"><div class="logo"><span class="mk">◆</span> autosnap</div><div class="sub" data-i18n="sub">sign in with your Proxmox credentials</div></div>
     <form id="f" onsubmit="return doLogin(event)">
       <div class="err" id="err"></div>
-      <div class="row">
-        <div><label data-i18n="user">User</label><input id="u" value="root" autocomplete="username" autofocus></div>
-        <div style="flex:0 0 108px"><label data-i18n="realm">Realm</label><select id="r"><option value="pam">pam</option><option value="pve">pve</option></select></div>
+      <div id="step1" style="display:grid;gap:14px">
+        <div class="row">
+          <div><label data-i18n="user">User</label><input id="u" value="root" autocomplete="username" autofocus></div>
+          <div style="flex:0 0 108px"><label data-i18n="realm">Realm</label><select id="r"><option value="pam">pam</option><option value="pve">pve</option></select></div>
+        </div>
+        <div><label data-i18n="password">Password</label><input id="p" type="password" autocomplete="current-password"></div>
       </div>
-      <div><label data-i18n="password">Password</label><input id="p" type="password" autocomplete="current-password"></div>
+      <div id="step2" style="display:none">
+        <label data-i18n="code">Verification code</label>
+        <input id="c" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456">
+      </div>
       <button class="submit" id="btn" type="submit" data-i18n="signin">Sign in</button>
-      <div class="hint" data-i18n="hint">same password as in Proxmox · validated live</div>
+      <div class="hint" id="hint" data-i18n="hint">same password as in Proxmox · validated live</div>
+      <button type="button" class="linkbtn" id="back" style="display:none" data-i18n="startOver" onclick="resetForm()">start again</button>
     </form>
   </div>
 <script>
 const I18N={en:{sub:"sign in with your Proxmox credentials",user:"User",realm:"Realm",password:"Password",signin:"Sign in",
-  hint:"same password as in Proxmox · validated live",checking:"Checking…",badlogin:"wrong login or password",connerr:"connection error"},
+  hint:"same password as in Proxmox · validated live",checking:"Checking…",badlogin:"wrong login or password",connerr:"connection error",
+  code:"Verification code",codeHint:"6-digit code from your authenticator app",verify:"Verify",badcode:"wrong verification code",
+  startOver:"start again"},
  pl:{sub:"logowanie poświadczeniami Proxmoksa",user:"Użytkownik",realm:"Realm",password:"Hasło",signin:"Zaloguj",
-  hint:"to samo hasło co w Proxmoksie · weryfikowane na żywo",checking:"Sprawdzam…",badlogin:"błędny login lub hasło",connerr:"błąd połączenia"}};
+  hint:"to samo hasło co w Proxmoksie · weryfikowane na żywo",checking:"Sprawdzam…",badlogin:"błędny login lub hasło",connerr:"błąd połączenia",
+  code:"Kod weryfikacyjny",codeHint:"6-cyfrowy kod z aplikacji uwierzytelniającej",verify:"Zweryfikuj",badcode:"błędny kod weryfikacyjny",
+  startOver:"zacznij od nowa"}};
 let LANG=localStorage.getItem('lang')||'en';
 const $=id=>document.getElementById(id);
 function T(k){return (I18N[LANG][k]||I18N.en[k]||k);}
@@ -65,16 +79,38 @@ function applyI18n(){document.documentElement.lang=LANG;
 function setLang(l){LANG=l;localStorage.setItem('lang',l);applyI18n();}
 function applyTheme(t){document.documentElement.setAttribute('data-theme',t);$('themeBtn').textContent=t==='dark'?'☀️':'🌙';localStorage.setItem('theme',t);}
 function toggleTheme(){applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');}
+// Two-step login: the code field only appears once Proxmox says the password
+// was right and it wants a second factor (NeedTFA), mirroring the PVE UI.
+let TFA=false;
+function showTfaStep(){
+  TFA=true;
+  $('step1').style.display='none';$('step2').style.display='grid';
+  $('back').style.display='';$('hint').setAttribute('data-i18n','codeHint');
+  $('btn').setAttribute('data-i18n','verify');
+  applyI18n();$('c').value='';$('c').focus();
+}
+function resetForm(){
+  TFA=false;
+  $('step1').style.display='grid';$('step2').style.display='none';
+  $('back').style.display='none';$('hint').setAttribute('data-i18n','hint');
+  $('btn').setAttribute('data-i18n','signin');
+  $('err').className='err';$('p').value='';applyI18n();$('p').focus();
+}
 async function doLogin(e){
   e.preventDefault();const btn=$('btn'),err=$('err');btn.disabled=true;btn.textContent=T('checking');err.className='err';
   try{
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({username:$('u').value.trim(),realm:$('r').value,password:$('p').value})});
+    const r=TFA
+      ? await fetch('/api/login/tfa',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({code:$('c').value.trim()})})
+      : await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({username:$('u').value.trim(),realm:$('r').value,password:$('p').value})});
     const j=await r.json();
+    if(r.ok&&j.tfa){showTfaStep();btn.disabled=false;return false;}
     if(r.ok){location.href='/';return false;}
-    err.textContent=j.error||T('badlogin');err.className='err show';
+    err.textContent=j.error||(TFA?T('badcode'):T('badlogin'));err.className='err show';
+    if(TFA){$('c').value='';$('c').focus();}
   }catch(ex){err.textContent=T('connerr');err.className='err show';}
-  btn.disabled=false;btn.textContent=T('signin');return false;
+  btn.disabled=false;btn.textContent=T(TFA?'verify':'signin');return false;
 }
 applyTheme(localStorage.getItem('theme')||'light');applyI18n();
 </script>
