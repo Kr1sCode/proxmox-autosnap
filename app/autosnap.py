@@ -37,6 +37,9 @@ DEFAULT_SETTINGS = {
     "paused": False,          # global master switch: True -> scheduler does nothing
     "default_keep": 8,        # global retention default: seeds new guests + guest_settings fallback
 }
+DEFAULT_AUTH = {
+    "allowlist": ["root@pam"],   # who may log in to the panel
+}
 GUEST_DEFAULTS = {
     "enabled": False,
     "mode": "interval",          # "interval" | "calendar"
@@ -87,11 +90,18 @@ def _atomic_write_json(path, data):
 
 
 def load_config():
+    """Read config.json, filling in defaults for missing settings.
+
+    Every key must be carried through: save_config() writes back whatever this
+    returns, so anything dropped here is erased from disk on the next save.
+    """
     cfg = _read_json(CONFIG_PATH, {})
     settings = dict(DEFAULT_SETTINGS)
     settings.update(cfg.get("settings", {}))
     guests = cfg.get("guests", {})
-    return {"settings": settings, "guests": guests}
+    auth = dict(DEFAULT_AUTH)
+    auth.update(cfg.get("auth", {}))
+    return {"settings": settings, "guests": guests, "auth": auth}
 
 
 def save_config(cfg):
