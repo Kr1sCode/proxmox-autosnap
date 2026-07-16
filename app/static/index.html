@@ -25,11 +25,14 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0}
+  /* Full-height shell: the page itself never scrolls, only the guest list does,
+     so the header and the log stay put no matter how many guests there are. */
   body{background:var(--bg);color:var(--txt);transition:background .2s,color .2s;
+    height:100dvh;display:flex;flex-direction:column;overflow:hidden;
     font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Liberation Sans",sans-serif}
   a{color:var(--accent);text-decoration:none}
   header{display:flex;align-items:center;gap:12px;padding:0 18px;height:52px;background:var(--head);
-    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+    border-bottom:1px solid var(--line);flex:none;z-index:10}
   .brand{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:600}
   .brand .mk{color:var(--accent);font-size:18px}
   .brand .sub{color:var(--dim);font-size:12px;font-weight:400}
@@ -57,15 +60,22 @@
   .seg2{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
   .seg2 button{border:none;background:var(--panel);color:var(--dim);padding:5px 9px;cursor:pointer;font:inherit;font-size:11.5px;font-weight:600}
   .seg2 button.active{background:var(--accent);color:#fff}
-  main{padding:18px;max-width:1440px;margin:0 auto}
-  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  main{padding:18px;max-width:1440px;margin:0 auto;width:100%;
+    flex:1;min-height:0;display:flex;flex-direction:column}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;flex:none}
   .toolbar h1{font-size:16px;margin:0;font-weight:600}
   .count{color:var(--dim);font-size:12.5px}
   .filter{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;cursor:pointer;user-select:none}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  /* The one scrolling region on the page. min-height:0 is what lets a flex child
+     actually shrink below its content and hand the overflow to the scrollbar. */
+  .tablecard{flex:1;min-height:0;overflow:auto}
   table{width:100%;border-collapse:collapse}
   thead th{text-align:left;font-weight:600;font-size:11.5px;color:var(--dim);padding:10px 14px;
-    background:var(--thead);border-bottom:1px solid var(--line);white-space:nowrap}
+    background:var(--thead);white-space:nowrap;position:sticky;top:0;z-index:2;
+    /* border-collapse:collapse drops borders off sticky cells while scrolling —
+       an inset shadow rides along instead. */
+    box-shadow:inset 0 -1px 0 var(--line)}
   thead th.c{text-align:center}
   tbody td{padding:9px 14px;border-bottom:1px solid var(--line2);vertical-align:middle}
   tbody td.c{text-align:center}
@@ -123,15 +133,41 @@
   .timelist{display:grid;gap:8px}
   .timerow{display:flex;gap:8px;align-items:center}
   .timerow input{width:120px}
-  .logcard{margin-top:18px}
-  .logcard .lh{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px}
-  pre#log{margin:0;padding:12px 14px;max-height:240px;overflow:auto;font-size:12px;line-height:1.6;
+  /* Pinned below the list: the log is the footer and never scrolls away. */
+  .logcard{margin-top:18px;flex:none}
+  .logcard .lh{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;user-select:none}
+  .logcard .lh .caret{color:var(--dim);font-size:11px;transition:transform .15s}
+  .logcard.collapsed .lh .caret{transform:rotate(-90deg)}
+  .logcard.collapsed pre#log{display:none}
+  pre#log{margin:0;padding:12px 14px;height:132px;overflow:auto;font-size:12px;line-height:1.6;
     font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--code-txt);background:var(--code);white-space:pre-wrap}
   #toast{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:70}
   .toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
     padding:10px 15px;border-radius:8px;box-shadow:var(--shadow);font-size:12.5px;min-width:220px;animation:sl .18s}
   .toast.ok{border-left-color:var(--green)} .toast.err{border-left-color:var(--red)}
   @keyframes sl{from{transform:translateX(16px);opacity:0}}
+  /* Always-visible scrollbar: overlay bars fade out and leave no hint that the
+     list continues below the fold. */
+  .tablecard{scrollbar-width:thin;scrollbar-color:var(--off) transparent}
+  .tablecard::-webkit-scrollbar{width:11px;height:11px}
+  .tablecard::-webkit-scrollbar-track{background:transparent}
+  .tablecard::-webkit-scrollbar-thumb{background:var(--off);border-radius:11px;
+    border:3px solid var(--panel);background-clip:padding-box}
+  .tablecard::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:padding-box}
+  pre#log{scrollbar-width:thin;scrollbar-color:#3a4757 transparent}
+  pre#log::-webkit-scrollbar{width:9px}
+  pre#log::-webkit-scrollbar-track{background:transparent}
+  pre#log::-webkit-scrollbar-thumb{background:#3a4757;border-radius:9px;
+    border:2px solid var(--code);background-clip:padding-box}
+  /* Too short to split into panes (phone landscape, tiny windows): hand scrolling
+     back to the page so the list keeps a usable height. */
+  @media (max-height:620px){
+    body{height:auto;min-height:100dvh;overflow:visible}
+    main{flex:none;min-height:0}
+    .tablecard{flex:none;overflow:visible}
+    thead th{position:static}
+    pre#log{height:auto;max-height:180px}
+  }
 </style>
 </head>
 <body>
@@ -165,7 +201,7 @@
     <label class="filter"><input type="checkbox" id="onlyOn"> <span data-i18n="onlyScheduled">scheduled only</span></label>
   </div>
 
-  <div class="card">
+  <div class="card tablecard">
     <table>
       <thead><tr>
         <th data-i18n="thVmid">VMID</th><th data-i18n="thName">Name</th><th data-i18n="thType">Type</th>
@@ -178,8 +214,12 @@
     </table>
   </div>
 
-  <div class="card logcard">
-    <div class="lh"><span data-i18n="log">Log</span><div class="spacer"></div><button class="btn sm ghost" onclick="loadLog()">↻</button></div>
+  <div class="card logcard" id="logcard">
+    <div class="lh" onclick="toggleLog()">
+      <span class="caret">▼</span><span data-i18n="log">Log</span>
+      <div class="spacer"></div>
+      <button class="btn sm ghost" onclick="event.stopPropagation();loadLog()">↻</button>
+    </div>
     <pre id="log">—</pre>
   </div>
 </main>
@@ -363,6 +403,8 @@ function setHstat(state){LASTSTATE=state;const el=$('hstat');
   if(!state){el.textContent='…';return;}
   el.textContent=state==='ok'?`${T('apiOk')} · ${HN} ${T('guests').toLowerCase()}`:T('apiErr');}
 async function loadLog(){try{const j=await api('/api/log');$('log').textContent=j.log||'—';const el=$('log');el.scrollTop=el.scrollHeight;}catch(e){}}
+function toggleLog(){const c=$('logcard').classList.toggle('collapsed');localStorage.setItem('logCollapsed',c?'1':'0');
+  if(!c){const el=$('log');el.scrollTop=el.scrollHeight;}}
 function applyPause(p){$('pauseSw').checked=!p;$('pdot').className='dot '+(p?'stop':'ok');$('pauseTxt').textContent=p?T('paused'):T('active');}
 
 function schedLabel(c){
@@ -481,6 +523,7 @@ async function whoami(){try{const j=await api('/api/me');if(j.user){$('uname').t
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModal(o.id);}));
 $('onlyOn').addEventListener('change',render);
 applyTheme(localStorage.getItem('theme')||'light');
+if(localStorage.getItem('logCollapsed')==='1')$('logcard').classList.add('collapsed');
 applyI18n();
 whoami();load();setInterval(load,30000);
 </script>
