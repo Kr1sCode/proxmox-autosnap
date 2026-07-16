@@ -1,4 +1,4 @@
-# ◆ proxmox-autosnap
+# proxmox-autosnap
 
 **Scheduled snapshots + retention for Proxmox VE — the feature the built‑in GUI is missing.**
 
