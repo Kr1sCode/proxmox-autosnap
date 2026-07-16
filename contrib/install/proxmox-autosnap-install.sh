@@ -25,10 +25,10 @@ msg_ok "Installed Dependencies"
 msg_info "Installing proxmox-autosnap"
 tmp_dir=$(mktemp -d)
 curl -fsSL "https://github.com/Kr1sCode/proxmox-autosnap/archive/refs/heads/main.tar.gz" | tar -xz -C "$tmp_dir"
-src="$tmp_dir"/*/
+src=$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
 mkdir -p /opt/autosnap /etc/autosnap /var/lib/autosnap /var/log/autosnap
-cp -r "$src"app/. /opt/autosnap/
-cp "$src"systemd/*.service "$src"systemd/*.timer /etc/systemd/system/
+cp -r "$src"/app/. /opt/autosnap/
+cp "$src"/systemd/*.service "$src"/systemd/*.timer /etc/systemd/system/
 cat <<'JSON' >/etc/autosnap/config.json
 {"settings":{"pve_host":"CHANGE_ME","pve_port":8006,"verify_tls":false,"paused":false},"auth":{"allowlist":["root@pam"]},"guests":{}}
 JSON

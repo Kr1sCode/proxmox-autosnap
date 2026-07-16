@@ -33,9 +33,9 @@ function update_script() {
   msg_info "Updating ${APP}"
   tmp_dir=$(mktemp -d)
   curl -fsSL "https://github.com/Kr1sCode/proxmox-autosnap/archive/refs/heads/main.tar.gz" | tar -xz -C "$tmp_dir"
-  src="$tmp_dir"/*/
-  cp -r "$src"app/. /opt/autosnap/
-  cp "$src"systemd/*.service "$src"systemd/*.timer /etc/systemd/system/
+  src=$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
+  cp -r "$src"/app/. /opt/autosnap/
+  cp "$src"/systemd/*.service "$src"/systemd/*.timer /etc/systemd/system/
   rm -rf "$tmp_dir"
   systemctl daemon-reload
   systemctl restart autosnap-web.service
