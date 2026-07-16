@@ -1,4 +1,4 @@
-# ◆ proxmox-autosnap
+# proxmox-autosnap
 
 **Scheduled snapshots + retention for Proxmox VE — the feature the built‑in GUI is missing.**
 
@@ -22,22 +22,22 @@ hypervisor to break when you update.
 
 ## Features
 
-- 🗓️ **Two schedule modes** per guest: fixed **interval** (every N min/hours) or
+- **Two schedule modes** per guest: fixed **interval** (every N min/hours) or
   **calendar** (specific times of day on chosen weekdays).
-- 🧹 **Retention** — keep the newest *N* automatic snapshots, prune the rest.
+- **Retention** — keep the newest *N* automatic snapshots, prune the rest.
   Independent from creation, so you can auto‑create but delete manually.
-- 🔒 **Safe by construction** — only snapshots named `auto_YYYYMMDD_HHMMSS` are
+- **Safe by construction** — only snapshots named `auto_YYYYMMDD_HHMMSS` are
   ever pruned (double‑checked with a regex right before deletion). Manual
   snapshots (`bkp`, `pre-upgrade`, …) are physically incapable of matching.
-- 🧪 **Dry‑run** per guest — log what *would* happen without touching anything.
-- ⏯️ **Global pause** master switch + **bulk enable/disable all** guests.
-- 👤 **Login with your Proxmox credentials** — validated live against the PVE
+- **Dry‑run** per guest — log what *would* happen without touching anything.
+- **Global pause** master switch + **bulk enable/disable all** guests.
+- **Login with your Proxmox credentials** — validated live against the PVE
   ticket API, nothing stored. Change root's password in Proxmox and it just
   works here too. An **allowlist** (default `root@pam`) prevents privilege
   escalation via the tool's token.
-- 🧩 **Host stays clean** — the only host‑side change is one API token + role.
+- **Host stays clean** — the only host‑side change is one API token + role.
   Uninstall removes them.
-- 🎨 **Light / dark theme** and **English / Polish** UI, switchable from the
+- **Light / dark theme** and **English / Polish** UI, switchable from the
   header (English + light by default).
 
 ![Login](docs/login.png)
