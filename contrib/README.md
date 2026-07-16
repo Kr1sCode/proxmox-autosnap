@@ -16,7 +16,11 @@ Once reviewed and verified there, maintainers promote the script to the main
 
 The `ct/` script sources the framework's `build.func` (which provides the
 standard whiptail wizard: CT ID, hostname, resources, bridge, IPv4 DHCP/static,
-gateway, DNS, …). The `install/` script sets the app up **without** creating any
-host-side API token; the container's app shows a **first-run setup wizard** on
-first web access where the user enters the Proxmox host and an API token — this
-keeps the helper script from modifying the host beyond creating the container.
+gateway, DNS, …). Both install and update deploy the app via the framework's
+`fetch_and_deploy_gh_release` / `check_for_gh_release` helpers (GitHub release
+`v1.0.0+` of this repo), per the ProxmoxVED AGENTS.md standard.
+
+The `install/` script sets the app up **without** creating any host-side API
+token; the container's app shows a **first-run setup wizard** on first web
+access where the user enters the Proxmox host and an API token — this keeps the
+helper script from modifying the host beyond creating the container.
