@@ -14,6 +14,12 @@ hypervisor to break when you update.
 
 ![Dashboard](docs/dashboard.png)
 
+<details><summary>Dark theme</summary>
+
+![Dashboard — dark](docs/dashboard-dark.png)
+
+</details>
+
 ## Features
 
 - 🗓️ **Two schedule modes** per guest: fixed **interval** (every N min/hours) or
@@ -31,6 +37,8 @@ hypervisor to break when you update.
   escalation via the tool's token.
 - 🧩 **Host stays clean** — the only host‑side change is one API token + role.
   Uninstall removes them.
+- 🎨 **Light / dark theme** and **English / Polish** UI, switchable from the
+  header (English + light by default).
 
 ![Login](docs/login.png)
 
