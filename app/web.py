@@ -115,9 +115,9 @@ def api_setup():
     token = str(body.get("token", "")).strip()
     verify = bool(body.get("verify_tls", False))
     if not host or not token:
-        return jsonify({"error": "host i token są wymagane"}), 400
+        return jsonify({"error": "host and token are required"}), 400
     if not core.check_token({"pve_host": host, "pve_port": port, "verify_tls": verify}, token):
-        return jsonify({"error": "token nie działa z tym hostem (sprawdź adres/uprawnienia)"}), 400
+        return jsonify({"error": "token does not work with this host (check address / privileges)"}), 400
     cfg["settings"]["pve_host"] = host
     cfg["settings"]["pve_port"] = port
     cfg["settings"]["verify_tls"] = verify
@@ -137,7 +137,7 @@ def login_page():
 def do_login():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
     if _throttled(ip):
-        return jsonify({"error": "za dużo prób, odczekaj chwilę"}), 429
+        return jsonify({"error": "too many attempts, please wait a moment"}), 429
     body = request.get_json(force=True) or {}
     username = str(body.get("username", "")).strip()
     realm = str(body.get("realm", "pam")).strip()
@@ -146,11 +146,11 @@ def do_login():
         username = f"{username}@{realm}"
     if username not in _allowlist():
         _record_fail(ip)
-        return jsonify({"error": "ten użytkownik nie ma dostępu do panelu"}), 403
+        return jsonify({"error": "this user is not allowed to access the panel"}), 403
     cfg = core.load_config()
     if not core.verify_credentials(cfg["settings"], username, password):
         _record_fail(ip)
-        return jsonify({"error": "błędny login lub hasło"}), 401
+        return jsonify({"error": "wrong login or password"}), 401
     session.permanent = True
     session["user"] = username
     return jsonify({"ok": True, "user": username})

@@ -366,7 +366,7 @@ def schedule_tick():
     """Run all enabled guests that are due. Invoked by the systemd timer."""
     cfg = load_config()
     if cfg["settings"].get("paused"):
-        log("tick: globalna pauza aktywna, pomijam")
+        log("tick: global pause active, skipping")
         return
     state = load_state()
     now = int(time.time())
