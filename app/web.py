@@ -51,11 +51,18 @@ app.config.update(
 _FAILS = {}
 _MAX_FAILS = 6
 _WINDOW = 300
+# How long a half-finished login (password accepted, code pending) stays valid.
+TFA_WINDOW = 180
 
 
 def _allowlist():
     cfg = core.load_config()
     return cfg.get("auth", {}).get("allowlist", ["root@pam"])
+
+
+def _clear_tfa():
+    for k in ("tfa_user", "tfa_challenge", "tfa_started"):
+        session.pop(k, None)
 
 
 def _throttled(ip):
@@ -148,9 +155,46 @@ def do_login():
         _record_fail(ip)
         return jsonify({"error": "this user is not allowed to access the panel"}), 403
     cfg = core.load_config()
-    if not core.verify_credentials(cfg["settings"], username, password):
+    status, challenge = core.verify_credentials(cfg["settings"], username, password)
+    if status == "fail":
         _record_fail(ip)
         return jsonify({"error": "wrong login or password"}), 401
+    if status == "tfa":
+        # Password was right but it is not a login yet: park the challenge and
+        # let /api/login/tfa finish it. No "user" in the session until then.
+        session.permanent = False
+        session["tfa_user"] = username
+        session["tfa_challenge"] = challenge
+        session["tfa_started"] = int(time.time())
+        return jsonify({"tfa": True})
+    session.permanent = True
+    session["user"] = username
+    return jsonify({"ok": True, "user": username})
+
+
+@app.route("/api/login/tfa", methods=["POST"])
+def do_login_tfa():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
+    if _throttled(ip):
+        return jsonify({"error": "too many attempts, please wait a moment"}), 429
+    username = session.get("tfa_user")
+    challenge = session.get("tfa_challenge")
+    started = session.get("tfa_started", 0)
+    if not username or not challenge:
+        return jsonify({"error": "no login in progress"}), 400
+    if int(time.time()) - int(started) > TFA_WINDOW:
+        _clear_tfa()
+        return jsonify({"error": "took too long, start again"}), 400
+    # Re-checked here too: the allowlist may have changed since the password step.
+    if username not in _allowlist():
+        _clear_tfa()
+        return jsonify({"error": "this user is not allowed to access the panel"}), 403
+    code = str((request.get_json(force=True) or {}).get("code", ""))
+    cfg = core.load_config()
+    if not core.verify_tfa_code(cfg["settings"], username, challenge, code):
+        _record_fail(ip)
+        return jsonify({"error": "wrong verification code"}), 401
+    _clear_tfa()
     session.permanent = True
     session["user"] = username
     return jsonify({"ok": True, "user": username})

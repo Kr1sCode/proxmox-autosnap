@@ -36,6 +36,9 @@ DEFAULT_SETTINGS = {
     "verify_tls": False,
     "paused": False,          # global master switch: True -> scheduler does nothing
 }
+DEFAULT_AUTH = {
+    "allowlist": ["root@pam"],   # who may log in to the panel
+}
 GUEST_DEFAULTS = {
     "enabled": False,
     "mode": "interval",          # "interval" | "calendar"
@@ -86,11 +89,18 @@ def _atomic_write_json(path, data):
 
 
 def load_config():
+    """Read config.json, filling in defaults for missing settings.
+
+    Every key must be carried through: save_config() writes back whatever this
+    returns, so anything dropped here is erased from disk on the next save.
+    """
     cfg = _read_json(CONFIG_PATH, {})
     settings = dict(DEFAULT_SETTINGS)
     settings.update(cfg.get("settings", {}))
     guests = cfg.get("guests", {})
-    return {"settings": settings, "guests": guests}
+    auth = dict(DEFAULT_AUTH)
+    auth.update(cfg.get("auth", {}))
+    return {"settings": settings, "guests": guests, "auth": auth}
 
 
 def save_config(cfg):
@@ -189,21 +199,60 @@ def is_configured():
         return False
 
 
+def _ticket(settings, params):
+    """POST /access/ticket. Returns the `data` dict, or None on failure."""
+    url = (f"https://{settings['pve_host']}:{settings['pve_port']}"
+           f"/api2/json/access/ticket")
+    try:
+        r = requests.post(url, data=params,
+                          verify=bool(settings.get("verify_tls", False)), timeout=15)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        return (r.json() or {}).get("data") or None
+    except ValueError:
+        return None
+
+
 def verify_credentials(settings, username, password):
     """Validate a login against Proxmox itself via the ticket API.
 
     Nothing is stored: the password is checked live against PVE, so whatever
     password is currently valid on the host (e.g. root@pam) is valid here too.
-    Returns True only on a successful ticket issue.
+
+    Returns (status, challenge):
+      ("ok", None)         — authenticated, no second factor configured
+      ("tfa", challenge)   — password correct, PVE wants a second factor
+      ("fail", None)       — bad credentials, or PVE unreachable
+
+    A password-only answer must never be treated as authenticated: when TFA is
+    configured, PVE still replies 200 with a *ticket*, but it is a `!tfa!`
+    challenge that PVE itself refuses as an "incomplete ticket". The `NeedTFA`
+    flag is the only thing separating the two cases.
     """
-    url = (f"https://{settings['pve_host']}:{settings['pve_port']}"
-           f"/api2/json/access/ticket")
-    try:
-        r = requests.post(url, data={"username": username, "password": password},
-                          verify=bool(settings.get("verify_tls", False)), timeout=15)
-    except requests.RequestException:
+    data = _ticket(settings, {"username": username, "password": password})
+    if not data or not data.get("ticket"):
+        return ("fail", None)
+    if data.get("NeedTFA"):
+        return ("tfa", data["ticket"])
+    return ("ok", None)
+
+
+def verify_tfa_code(settings, username, challenge, code):
+    """Answer a TFA challenge with a TOTP code. True only on a full ticket.
+
+    The response goes in `password` as `<type>:<value>` (PVE rejects `otp`
+    alongside `tfa-challenge`); a still-incomplete answer would come back
+    flagged NeedTFA again.
+    """
+    code = str(code).strip().replace(" ", "")
+    if not code.isdigit():
         return False
-    return r.status_code == 200 and bool((r.json() or {}).get("data", {}).get("ticket"))
+    data = _ticket(settings, {"username": username, "tfa-challenge": challenge,
+                              "password": f"totp:{code}"})
+    return bool(data and data.get("ticket") and not data.get("NeedTFA"))
 
 
 def _parse_hhmm(s):
