@@ -35,6 +35,7 @@ DEFAULT_SETTINGS = {
     "pve_port": 8006,
     "verify_tls": False,
     "paused": False,          # global master switch: True -> scheduler does nothing
+    "default_keep": 8,        # global retention default: seeds new guests + guest_settings fallback
 }
 GUEST_DEFAULTS = {
     "enabled": False,
@@ -99,7 +100,12 @@ def save_config(cfg):
 
 def guest_settings(cfg, vmid):
     g = dict(GUEST_DEFAULTS)
-    g.update(cfg.get("guests", {}).get(str(vmid), {}))
+    stored = cfg.get("guests", {}).get(str(vmid), {})
+    # A guest with no explicit keep inherits the global default_keep; once the
+    # user sets keep in the guest modal it becomes an explicit per-guest override.
+    if "keep" not in stored:
+        g["keep"] = int(cfg.get("settings", {}).get("default_keep", GUEST_DEFAULTS["keep"]))
+    g.update(stored)
     return g
 
 
@@ -360,6 +366,23 @@ def run_guest(vmid, force=False, snapshot=None):
     }
     save_state(state)
     return {"created": created, "deleted": deleted, "dryrun": dryrun}
+
+
+def prune_now(vmid):
+    """Enforce retention for one guest immediately: prune only, no new snapshot.
+
+    Used when the user changes `keep` in the UI so the snapshot count drops to
+    the new value at once instead of waiting for the next scheduled tick. Does
+    NOT touch schedule state (last_run), so it never shifts the next-due time.
+    Honours the guest's dryrun flag. Returns the number of snapshots deleted.
+    """
+    cfg = load_config()
+    g = guest_settings(cfg, vmid)
+    pve = PVE(cfg["settings"])
+    meta = guest_index(pve).get(str(vmid))
+    if not meta:
+        raise RuntimeError(f"guest {vmid} not found via API")
+    return do_prune(pve, meta, vmid, g["prefix"], g["keep"], bool(g["dryrun"]))
 
 
 def schedule_tick():

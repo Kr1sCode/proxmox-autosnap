@@ -3,7 +3,8 @@
     "pve_host": "CHANGE_ME",
     "pve_port": 8006,
     "verify_tls": false,
-    "paused": false
+    "paused": false,
+    "default_keep": 8
   },
   "auth": {
     "allowlist": ["root@pam"]

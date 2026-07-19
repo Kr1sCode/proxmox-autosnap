@@ -295,6 +295,12 @@
         <div class="tt"><b data-i18n="globalPause">Global pause</b><div data-i18n="globalPauseDesc">Suspends the entire scheduler without touching guest configs.</div></div>
       </div>
       <div class="field">
+        <label data-i18n="defaultKeep">Default retention (keep newest)</label>
+        <div class="row"><input type="number" id="sKeep" min="0" style="width:100px"> <span class="hint" data-i18n="snapshots">snapshots</span>
+          <button class="btn" type="button" onclick="applyRetentionAll()" data-i18n="applyAll">Apply to all now</button></div>
+        <div class="hint" data-i18n="defaultKeepHint">Seeds new guests. "Apply to all" writes it to every configured guest and prunes right away.</div>
+      </div>
+      <div class="field">
         <label data-i18n="allowlist">Panel access (allowlist)</label>
         <input type="text" id="sAllow" placeholder="root@pam, admin@pve">
         <div class="hint" data-i18n="allowlistHint">Who may log in. Credentials validated live against Proxmox.</div>
@@ -333,6 +339,8 @@ const I18N={
     keepNewest:"Keep newest",snapshots:"snapshots",dryRun:"Dry-run",dryRunDesc:"Logs what it would do, creates/deletes nothing.",
     prefix:"Name prefix",removeConfig:"Remove config",cancel:"Cancel",save:"Save",
     globalSettings:"Global settings",globalPause:"Global pause",globalPauseDesc:"Suspends the entire scheduler without touching guest configs.",
+    defaultKeep:"Default retention (keep newest)",defaultKeepHint:"Seeds new guests. \"Apply to all\" writes it to every configured guest and prunes right away.",applyAll:"Apply to all now",
+    tRetApplied:"Retention applied to all",
     allowlist:"Panel access (allowlist)",allowlistHint:"Who may log in. Credentials validated live against Proxmox.",
     verifyTls:"Verify API TLS certificate",verifyTlsDesc:"Enable only if the host has a trusted cert (self-signed → off).",
     connection:"Proxmox connection",schedulerEvery:"scheduler every",
@@ -356,6 +364,8 @@ const I18N={
     keepNewest:"Trzymaj najnowszych",snapshots:"migawek",dryRun:"Tryb próbny (dry-run)",dryRunDesc:"Loguje co by zrobił, nic nie tworzy ani nie kasuje.",
     prefix:"Prefiks nazw",removeConfig:"Usuń config",cancel:"Anuluj",save:"Zapisz",
     globalSettings:"Ustawienia globalne",globalPause:"Pauza globalna",globalPauseDesc:"Wstrzymuje cały scheduler bez ruszania configów guestów.",
+    defaultKeep:"Domyślna retencja (trzymaj najnowszych)",defaultKeepHint:"Ustawia domyślną wartość dla nowych guestów. „Zastosuj do wszystkich" zapisuje ją każdemu skonfigurowanemu guestowi i od razu przycina.",applyAll:"Zastosuj do wszystkich teraz",
+    tRetApplied:"Retencja zastosowana do wszystkich",
     allowlist:"Dostęp do panelu (allowlista)",allowlistHint:"Kto może się logować. Login walidowany na żywo przez Proxmox.",
     verifyTls:"Weryfikuj certyfikat TLS API",verifyTlsDesc:"Włącz tylko jeśli host ma zaufany cert (self-signed → off).",
     connection:"Połączenie z Proxmoksem",schedulerEvery:"scheduler co",
@@ -508,14 +518,23 @@ async function snapNow(vmid){
 async function openSettings(){
   try{const s=await api('/api/settings');
     $('sPause').checked=!!s.paused;$('sTls').checked=!!s.verify_tls;$('sAllow').value=(s.allowlist||[]).join(', ');
+    $('sKeep').value=(s.default_keep!=null?s.default_keep:8);
     $('sHost').textContent=(s.pve_host||'')+':'+(s.pve_port||'');$('sTick').textContent=s.scheduler_minutes||5;
     $('settingsOverlay').classList.add('show');}catch(e){toast(T('error')+': '+e.message,'err');}
 }
 async function saveSettings(){
   const body={paused:$('sPause').checked,verify_tls:$('sTls').checked,
+    default_keep:Math.max(0,parseInt($('sKeep').value||'8')),
     allowlist:$('sAllow').value.split(',').map(x=>x.trim()).filter(Boolean)};
   try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     toast(T('tSaved'),'ok');closeModal('settingsOverlay');load();}catch(e){toast(T('error')+': '+e.message,'err');}
+}
+async function applyRetentionAll(){
+  const keep=Math.max(0,parseInt($('sKeep').value||'8'));
+  try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({default_keep:keep})});
+    const j=await api('/api/retention/apply-all',{method:'POST'});
+    toast(T('tRetApplied')+' — keep '+j.keep+', −'+j.pruned,'ok');load();
+  }catch(e){toast(T('error')+': '+e.message,'err');}
 }
 
 async function logout(){try{await fetch('/api/logout',{method:'POST'});}catch(e){}location.href='/login';}

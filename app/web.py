@@ -267,7 +267,15 @@ def save_guest(vmid):
     cfg = core.load_config()
     cfg.setdefault("guests", {})[str(vmid)] = {**core.GUEST_DEFAULTS, **clean}
     core.save_config(cfg)
-    return jsonify({"ok": True, "config": cfg["guests"][str(vmid)]})
+    # Apply the new retention right away so the snapshot count reflects `keep`
+    # without waiting for the next scheduled tick. Best-effort: a prune failure
+    # (e.g. host briefly unreachable) must not fail the save.
+    pruned = 0
+    try:
+        pruned = core.prune_now(vmid)
+    except Exception as e:  # noqa: BLE001
+        core.log(f"prune-on-save for {vmid} failed: {e}")
+    return jsonify({"ok": True, "config": cfg["guests"][str(vmid)], "pruned": pruned})
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
@@ -280,6 +288,7 @@ def settings_route():
             "pve_host": cfg["settings"].get("pve_host"),
             "pve_port": cfg["settings"].get("pve_port"),
             "allowlist": cfg.get("auth", {}).get("allowlist", ["root@pam"]),
+            "default_keep": int(cfg["settings"].get("default_keep", 8)),
             "scheduler_minutes": 5,
         })
     body = request.get_json(force=True) or {}
@@ -287,11 +296,41 @@ def settings_route():
         cfg["settings"]["paused"] = bool(body["paused"])
     if "verify_tls" in body:
         cfg["settings"]["verify_tls"] = bool(body["verify_tls"])
+    if "default_keep" in body:
+        cfg["settings"]["default_keep"] = max(0, int(body["default_keep"]))
     if "allowlist" in body and isinstance(body["allowlist"], list):
         al = [str(u).strip() for u in body["allowlist"] if str(u).strip()]
         cfg.setdefault("auth", {})["allowlist"] = al or ["root@pam"]
     core.save_config(cfg)
     return jsonify({"ok": True})
+
+
+@app.route("/api/retention/apply-all", methods=["POST"])
+def retention_apply_all():
+    """Set every configured guest's keep to the global default and prune now.
+
+    One place to re-flow retention across the whole fleet: writes the global
+    default_keep as an explicit per-guest keep on each configured guest, then
+    prunes each so counts drop immediately. Prune errors are collected, not
+    fatal. Guests never configured are left untouched (use bulk-enable first).
+    """
+    cfg = core.load_config()
+    keep = max(0, int(cfg["settings"].get("default_keep", 8)))
+    guests = cfg.get("guests", {})
+    for gc in guests.values():
+        gc["keep"] = keep
+    core.save_config(cfg)
+    changed = pruned = 0
+    errors = []
+    for vmid in guests:
+        changed += 1
+        try:
+            pruned += core.prune_now(vmid)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{vmid}: {e}")
+            core.log(f"apply-all prune for {vmid} failed: {e}")
+    return jsonify({"ok": True, "keep": keep, "changed": changed,
+                    "pruned": pruned, "errors": errors})
 
 
 @app.route("/api/bulk", methods=["POST"])
@@ -312,9 +351,13 @@ def bulk():
     n = 0
     if action == "enable":
         pve = core.PVE(cfg["settings"])
+        dk = int(cfg["settings"].get("default_keep", core.GUEST_DEFAULTS["keep"]))
         for vmid in core.guest_index(pve):
-            entry = {**core.GUEST_DEFAULTS, **guests.get(vmid, {})}
+            prev = guests.get(vmid, {})
+            entry = {**core.GUEST_DEFAULTS, **prev}
             entry["enabled"] = True
+            if "keep" not in prev:  # honour the global default for freshly-enabled guests
+                entry["keep"] = dk
             guests[vmid] = entry
             n += 1
     else:
