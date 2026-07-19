@@ -20,6 +20,10 @@ hypervisor to break when you update.
 
 </details>
 
+Per‑guest scheduling, retention and dry‑run — one click from the list:
+
+![Edit a guest](docs/edit-modal.png)
+
 ## Features
 
 - **Two schedule modes** per guest: fixed **interval** (every N min/hours) or
@@ -30,7 +34,9 @@ hypervisor to break when you update.
   ever pruned (double‑checked with a regex right before deletion). Manual
   snapshots (`bkp`, `pre-upgrade`, …) are physically incapable of matching.
 - **Dry‑run** per guest — log what *would* happen without touching anything.
-- **Global pause** master switch + **bulk enable/disable all** guests.
+- **Global pause** master switch + fleet‑wide toolbar actions: **enable/disable
+  all**, **snapshot all** scheduled guests, **delete all** auto snapshots, and
+  set **retention for all** at once.
 - **Login with your Proxmox credentials** — validated live against the PVE
   ticket API, nothing stored. Change root's password in Proxmox and it just
   works here too. An **allowlist** (default `root@pam`) prevents privilege
