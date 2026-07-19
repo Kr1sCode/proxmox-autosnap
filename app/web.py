@@ -333,6 +333,49 @@ def retention_apply_all():
                     "pruned": pruned, "errors": errors})
 
 
+@app.route("/api/snapshots/create-all", methods=["POST"])
+def snapshots_create_all():
+    """Take a snapshot NOW on every guest whose schedule is enabled.
+
+    Forces creation regardless of the per-guest 'create' toggle, then applies
+    that guest's retention (via run_guest). Only enabled guests are touched.
+    """
+    cfg = core.load_config()
+    guests = cfg.get("guests", {})
+    targets = [v for v, g in guests.items() if g.get("enabled")]
+    created = 0
+    errors = []
+    for vmid in targets:
+        try:
+            if core.run_guest(vmid, snapshot=True).get("created"):
+                created += 1
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{vmid}: {e}")
+            core.log(f"create-all for {vmid} failed: {e}")
+    return jsonify({"ok": True, "guests": len(targets),
+                    "created": created, "errors": errors})
+
+
+@app.route("/api/snapshots/delete-all", methods=["POST"])
+def snapshots_delete_all():
+    """Delete EVERY managed (prefix_) snapshot on all configured guests.
+
+    Destructive but bounded: only autosnap-managed names are removed; manual
+    snapshots are never touched (same regex safety as retention).
+    """
+    cfg = core.load_config()
+    guests = cfg.get("guests", {})
+    deleted = 0
+    errors = []
+    for vmid in guests:
+        try:
+            deleted += core.purge_snapshots(vmid)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{vmid}: {e}")
+            core.log(f"delete-all for {vmid} failed: {e}")
+    return jsonify({"ok": True, "deleted": deleted, "errors": errors})
+
+
 @app.route("/api/bulk", methods=["POST"])
 def bulk():
     """Enable/disable scheduling for every guest at once.

@@ -395,6 +395,36 @@ def prune_now(vmid):
     return do_prune(pve, meta, vmid, g["prefix"], g["keep"], bool(g["dryrun"]))
 
 
+def purge_snapshots(vmid):
+    """Delete EVERY managed (prefix_) snapshot for a guest, ignoring keep.
+
+    Same safety as prune: only names matching ^<prefix>_\\d{8}_\\d{6}$ are touched,
+    re-checked immediately before each delete, so manual snapshots (bkp/NOW/…)
+    are never removed. Honours the guest's dryrun flag. Returns count deleted.
+    """
+    cfg = load_config()
+    g = guest_settings(cfg, vmid)
+    pve = PVE(cfg["settings"])
+    meta = guest_index(pve).get(str(vmid))
+    if not meta:
+        raise RuntimeError(f"guest {vmid} not found via API")
+    rx = snap_regex(g["prefix"])
+    dryrun = bool(g["dryrun"])
+    deleted = 0
+    for s in pve.list_snapshots(meta["node"], meta["type"], vmid):
+        n = s.get("name", "")
+        if n == "current" or not rx.match(n):
+            continue
+        if dryrun:
+            log(f"[DRY-RUN] would delete {n}")
+            continue
+        if pve.delete_snapshot(meta["node"], meta["type"], vmid, n) == "OK":
+            deleted += 1
+        else:
+            log(f"WARN: delete of {n} did not end OK")
+    return deleted
+
+
 def schedule_tick():
     """Run all enabled guests that are due. Invoked by the systemd timer."""
     cfg = load_config()
