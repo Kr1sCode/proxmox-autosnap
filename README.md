@@ -36,7 +36,7 @@ Per‑guest scheduling, retention and dry‑run — one click from the list:
 - **Dry‑run** per guest — log what *would* happen without touching anything.
 - **Global pause** master switch + fleet‑wide toolbar actions: **enable/disable
   all**, **snapshot all** scheduled guests, **delete all** auto snapshots, and
-  set **retention for all** at once.
+  set the **schedule** or **retention for all** guests at once.
 - **Login with your Proxmox credentials** — validated live against the PVE
   ticket API, nothing stored. Change root's password in Proxmox and it just
   works here too. An **allowlist** (default `root@pam`) prevents privilege
