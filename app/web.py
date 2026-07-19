@@ -376,6 +376,30 @@ def snapshots_delete_all():
     return jsonify({"ok": True, "deleted": deleted, "errors": errors})
 
 
+@app.route("/api/schedule/apply-all", methods=["POST"])
+def schedule_apply_all():
+    """Overwrite the schedule (interval OR calendar) on every configured guest.
+
+    Only touches scheduling fields; enabled/create/keep/prefix are left as-is.
+    Does not reset last_run, so next-due recomputes from the new schedule.
+    """
+    body = request.get_json(force=True) or {}
+    mode = "calendar" if body.get("mode") == "calendar" else "interval"
+    patch = {"mode": mode}
+    if mode == "interval":
+        patch["interval_minutes"] = max(1, int(body.get("interval_minutes", 360)))
+    else:
+        times = [str(t).strip() for t in (body.get("times") or []) if _HHMM.match(str(t).strip())]
+        patch["times"] = sorted(set(times)) or ["03:00"]
+        patch["weekdays"] = sorted({int(d) for d in (body.get("weekdays") or []) if 0 <= int(d) <= 6})
+    cfg = core.load_config()
+    guests = cfg.get("guests", {})
+    for gc in guests.values():
+        gc.update(patch)
+    core.save_config(cfg)
+    return jsonify({"ok": True, "changed": len(guests), "mode": mode})
+
+
 @app.route("/api/bulk", methods=["POST"])
 def bulk():
     """Enable/disable scheduling for every guest at once.

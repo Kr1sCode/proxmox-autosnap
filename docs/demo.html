@@ -216,6 +216,7 @@
     <button class="btn sm" data-i18n="enableAll" onclick="bulk('enable')">▶ Enable all</button>
     <button class="btn sm" data-i18n="disableAll" onclick="bulk('disable')">⏸ Disable all</button>
     <button class="btn sm" data-i18n="snapAll" onclick="demoAction()">＋ Snapshot all</button>
+    <button class="btn sm" data-i18n="schedAll" onclick="demoAction()">🕐 Schedule: all</button>
     <button class="btn sm" data-i18n="retAll" onclick="demoAction()">↺ Retention: all</button>
     <button class="btn sm danger" data-i18n="purgeAll" onclick="demoAction()">🗑 Delete snapshots</button>
     <label class="filter"><input type="checkbox" id="onlyOn"> <span data-i18n="onlyScheduled">scheduled only</span></label>
@@ -338,7 +339,7 @@ const I18N={
   en:{tagline:"Proxmox snapshot scheduler",schedule:"Schedule",active:"active",paused:"paused",
     apiOk:"API OK",apiErr:"API error",refresh:"Refresh",settings:"Settings",
     logout:"Log out",guests:"Guests",enableAll:"▶ Enable all",disableAll:"⏸ Disable all",onlyScheduled:"scheduled only",
-    snapAll:"＋ Snapshot all",retAll:"↺ Retention: all",purgeAll:"🗑 Delete snapshots",
+    snapAll:"＋ Snapshot all",schedAll:"🕐 Schedule: all",retAll:"↺ Retention: all",purgeAll:"🗑 Delete snapshots",
     thVmid:"VMID",thName:"Name",thType:"Type",thAuto:"Auto",thSchedule:"Schedule",thCreate:"Create",thRetention:"Retention",
     thSnapshots:"Snapshots",thLast:"Last",thNext:"Next",loading:"Loading…",none:"None",log:"Log",
     yes:"yes",no:"no",off:"off",keep:"keep",auto:"auto",man:"man",everyN:"every",min:"min",daily:"daily",
@@ -362,7 +363,7 @@ const I18N={
   pl:{tagline:"Harmonogram migawek Proxmoksa",schedule:"Harmonogram",active:"aktywny",paused:"wstrzymany",
     apiOk:"API OK",apiErr:"błąd API",refresh:"Odśwież",settings:"Ustawienia",
     logout:"Wyloguj",guests:"Guesty",enableAll:"▶ Włącz wszystkie",disableAll:"⏸ Wyłącz wszystkie",onlyScheduled:"tylko z harmonogramem",
-    snapAll:"＋ Migawka wszystkim",retAll:"↺ Retencja: wszystkim",purgeAll:"🗑 Usuń migawki",
+    snapAll:"＋ Migawka wszystkim",schedAll:"🕐 Harmonogram: wszystkim",retAll:"↺ Retencja: wszystkim",purgeAll:"🗑 Usuń migawki",
     thVmid:"VMID",thName:"Nazwa",thType:"Typ",thAuto:"Auto",thSchedule:"Harmonogram",thCreate:"Twórz",thRetention:"Retencja",
     thSnapshots:"Migawki",thLast:"Ostatnio",thNext:"Następnie",loading:"Ładowanie…",none:"Brak",log:"Dziennik",
     yes:"tak",no:"nie",off:"off",keep:"keep",auto:"auto",man:"man",everyN:"co",min:"min",daily:"codziennie",

@@ -199,6 +199,7 @@
     <button class="btn sm" data-i18n="enableAll" onclick="bulk('enable')">▶ Enable all</button>
     <button class="btn sm" data-i18n="disableAll" onclick="bulk('disable')">⏸ Disable all</button>
     <button class="btn sm" data-i18n="snapAll" onclick="createAll()">＋ Snapshot all</button>
+    <button class="btn sm" data-i18n="schedAll" onclick="openSchedAll()">🕐 Schedule: all</button>
     <button class="btn sm" data-i18n="retAll" onclick="retentionAll()">↺ Retention: all</button>
     <button class="btn sm danger" data-i18n="purgeAll" onclick="purgeAll()">🗑 Delete snapshots</button>
     <label class="filter"><input type="checkbox" id="onlyOn"> <span data-i18n="onlyScheduled">scheduled only</span></label>
@@ -289,6 +290,33 @@
   </div>
 </div>
 
+<div class="overlay" id="schedOverlay">
+  <div class="modal">
+    <div class="mh"><span data-i18n="bulkSchedTitle">Set schedule for all guests</span></div>
+    <div class="mb">
+      <div class="field">
+        <label data-i18n="schedule">Schedule</label>
+        <div class="seg" id="bsSeg">
+          <button type="button" data-mode="interval" data-i18n="modeInterval" onclick="bsMode('interval')">Every</button>
+          <button type="button" data-mode="calendar" data-i18n="modeCalendar" onclick="bsMode('calendar')">At time</button>
+        </div>
+      </div>
+      <div class="field" id="bsIvBox">
+        <label data-i18n="interval">Interval</label>
+        <select id="bsInterval"></select>
+      </div>
+      <div class="field" id="bsCalBox" style="display:none">
+        <label data-i18n="times">Time</label>
+        <div class="row"><input type="time" id="bsTime" value="03:00" style="max-width:140px"> <span class="hint" data-i18n="bulkSchedDaily">every day</span></div>
+      </div>
+      <div class="hint" data-i18n="bulkSchedHint">Overwrites the schedule of every configured guest. Enable/create/retention are left unchanged.</div>
+    </div>
+    <div class="mf"><div class="spacer"></div>
+      <button class="btn" data-i18n="cancel" onclick="closeModal('schedOverlay')">Cancel</button>
+      <button class="btn primary" data-i18n="applyAll" onclick="applyScheduleAll()">Apply to all now</button>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="settingsOverlay">
   <div class="modal">
     <div class="mh">⚙ <span data-i18n="globalSettings">Global settings</span></div>
@@ -331,7 +359,8 @@ const I18N={
   en:{tagline:"Proxmox snapshot scheduler",schedule:"Schedule",active:"active",paused:"paused",
     apiOk:"API OK",apiErr:"API error",refresh:"Refresh",settings:"Settings",
     logout:"Log out",guests:"Guests",enableAll:"▶ Enable all",disableAll:"⏸ Disable all",onlyScheduled:"scheduled only",
-    snapAll:"＋ Snapshot all",retAll:"↺ Retention: all",purgeAll:"🗑 Delete snapshots",
+    snapAll:"＋ Snapshot all",schedAll:"🕐 Schedule: all",retAll:"↺ Retention: all",purgeAll:"🗑 Delete snapshots",
+    bulkSchedTitle:"Set schedule for all guests",bulkSchedDaily:"every day",bulkSchedHint:"Overwrites the schedule of every configured guest. Enable/create/retention are left unchanged.",tSchedApplied:"schedule applied to all",
     thVmid:"VMID",thName:"Name",thType:"Type",thAuto:"Auto",thSchedule:"Schedule",thCreate:"Create",thRetention:"Retention",
     thSnapshots:"Snapshots",thLast:"Last",thNext:"Next",loading:"Loading…",none:"None",log:"Log",
     yes:"yes",no:"no",off:"off",keep:"keep",auto:"auto",man:"man",everyN:"every",min:"min",daily:"daily",
@@ -358,7 +387,8 @@ const I18N={
   pl:{tagline:"Harmonogram migawek Proxmoksa",schedule:"Harmonogram",active:"aktywny",paused:"wstrzymany",
     apiOk:"API OK",apiErr:"błąd API",refresh:"Odśwież",settings:"Ustawienia",
     logout:"Wyloguj",guests:"Guesty",enableAll:"▶ Włącz wszystkie",disableAll:"⏸ Wyłącz wszystkie",onlyScheduled:"tylko z harmonogramem",
-    snapAll:"＋ Migawka wszystkim",retAll:"↺ Retencja: wszystkim",purgeAll:"🗑 Usuń migawki",
+    snapAll:"＋ Migawka wszystkim",schedAll:"🕐 Harmonogram: wszystkim",retAll:"↺ Retencja: wszystkim",purgeAll:"🗑 Usuń migawki",
+    bulkSchedTitle:"Ustaw harmonogram dla wszystkich guestów",bulkSchedDaily:"codziennie",bulkSchedHint:"Nadpisuje harmonogram każdego skonfigurowanego guesta. Włączenie/tworzenie/retencja bez zmian.",tSchedApplied:"harmonogram zastosowany do wszystkich",
     thVmid:"VMID",thName:"Nazwa",thType:"Typ",thAuto:"Auto",thSchedule:"Harmonogram",thCreate:"Twórz",thRetention:"Retencja",
     thSnapshots:"Migawki",thLast:"Ostatnio",thNext:"Następnie",loading:"Ładowanie…",none:"Brak",log:"Dziennik",
     yes:"tak",no:"nie",off:"off",keep:"keep",auto:"auto",man:"man",everyN:"co",min:"min",daily:"codziennie",
@@ -498,6 +528,24 @@ async function retentionAll(){
   try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({default_keep:keep})});
     const j=await api('/api/retention/apply-all',{method:'POST'});
     toast(`${T('tRetApplied')} - keep ${j.keep}, -${j.pruned}`,'ok');load();
+  }catch(e){toast(T('error')+': '+e.message,'err');}
+}
+var BSMODE='interval';
+function openSchedAll(){
+  const sel=$('bsInterval');
+  sel.innerHTML=Object.entries(PRESETS).map(([k,v])=>`<option value="${v}">${presetLabel(k)}</option>`).join('');
+  sel.value=360;
+  bsMode('interval');
+  $('schedOverlay').classList.add('show');
+}
+function bsMode(m){BSMODE=m;[...$('bsSeg').children].forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  $('bsIvBox').style.display=m==='interval'?'grid':'none';$('bsCalBox').style.display=m==='calendar'?'grid':'none';}
+async function applyScheduleAll(){
+  const body=BSMODE==='calendar'
+    ?{mode:'calendar',times:[$('bsTime').value||'03:00'],weekdays:[]}
+    :{mode:'interval',interval_minutes:Math.max(1,parseInt($('bsInterval').value||'360'))};
+  try{const j=await api('/api/schedule/apply-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast(`${T('tSchedApplied')} (${j.changed})`,'ok');closeModal('schedOverlay');load();
   }catch(e){toast(T('error')+': '+e.message,'err');}
 }
 async function togglePause(swOn){
