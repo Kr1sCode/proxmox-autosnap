@@ -1,5 +1,9 @@
 # proxmox-autosnap
 
+[![GitHub stars](https://img.shields.io/github/stars/Kr1sCode/proxmox-autosnap?style=flat)](https://github.com/Kr1sCode/proxmox-autosnap/stargazers)
+[![License](https://img.shields.io/badge/license-see--LICENSE-blue)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/Kr1sCode/proxmox-autosnap)](https://github.com/Kr1sCode/proxmox-autosnap/commits/main)
+
 **Scheduled snapshots + retention for Proxmox VE — the feature the built‑in GUI is missing.**
 
 Proxmox has scheduled *backups* and *replication*, but no built‑in way to take
